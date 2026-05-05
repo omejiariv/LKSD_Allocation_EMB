@@ -45,8 +45,8 @@ if uploaded_file:
         df_stores.columns = df_stores.columns.astype(str).str.strip() # Limpiamos también las tiendas por si acaso
         tiendas_destino = df_stores['Store'].dropna().tolist()
         
-        # Extraer solo las columnas necesarias (ahora sin espacios fantasma)
-        df_resultado = df_newness[['SKU', 'Product Name', 'Size', 'Gender', 'LSKD DC SOH', 'Grade']].copy()
+        # Extraer solo las columnas necesarias (usando los nuevos nombres con guion bajo)
+        df_resultado = df_newness[['SKU', 'Product_Name', 'Size', 'Gender', 'LSKD_DC_SOH', 'Grade']].copy()
         
         for tienda in tiendas_destino:
             df_resultado[tienda] = 1 
