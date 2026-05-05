@@ -64,7 +64,7 @@ if uploaded_file:
 
         # --- PASO 2: MAPEO DE DICCIONARIOS ---
         # Diccionario de grados (A,B,C,D) y climas de cada tienda
-        store_grades = pd.Series(df_stores['Womens Allocation Grade'].values, index=df_stores['Store']).to_dict()
+        store_grades = pd.Series(df_stores['Womens_Allocation_Grade'].values, index=df_stores['Store']).to_dict()
         store_climates = pd.Series(df_stores['Climate'].astype(str).str.lower().str.strip().values, index=df_stores['Store']).to_dict()
         tiendas_destino = df_stores['Store'].dropna().tolist()
 
