@@ -72,47 +72,61 @@ if uploaded_file:
         df_resultado = df_newness[['SKU', 'Product_Name', 'Size', 'Gender', 'Gender_&_Category', 'LSKD_DC_SOH', 'Grade']].copy()
         df_resultado['LSKD_DC_SOH'] = pd.to_numeric(df_resultado['LSKD_DC_SOH'], errors='coerce').fillna(0)
 
-        # A) Cálculo de Límite Base
-        limite_absoluto = (max_send_pct + flex_margin) / 100.0
-        df_resultado['Max_Allocable'] = df_resultado['LSKD_DC_SOH'] * limite_absoluto
-
-        # B) Extracción del Multiplicador de Curva de Tallas
+        # 1. Extraer el multiplicador base de la curva de tallas
         def obtener_multiplicador(row):
             try:
                 talla = str(row['Size']).strip()
                 categoria = str(row['Gender_&_Category']).strip()
-                # Buscar la fila de la talla en la matriz
                 fila_curva = df_curve[df_curve['SIZE'].astype(str).str.strip() == talla]
                 if not fila_curva.empty and categoria in fila_curva.columns:
                     valor = fila_curva.iloc[0][categoria]
                     return float(valor) if pd.notna(valor) else 1.0
             except:
                 pass
-            return 1.0 # Multiplicador neutro si no encuentra cruce
+            return 1.0
 
         df_resultado['Curve_Multiplier'] = df_resultado.apply(obtener_multiplicador, axis=1)
 
-        # C) Distribución e Inyección de Reglas por Tienda
+        # 2. Normalizar la curva (Infla las tallas S, M, L y reduce las extremas SIN romper la regla del 30% global)
+        df_resultado['Norm_Curve'] = df_resultado.groupby('Product_Name')['Curve_Multiplier'].transform(lambda x: x / x.mean() if x.mean() > 0 else 1)
+
+        # 3. Cálculo de la Torta a Repartir (Max_Allocable)
+        limite_absoluto = (max_send_pct + flex_margin) / 100.0
+        
+        # Unidades máximas = (Bodega) * (30%) * (Ajuste de Curva)
+        # np.clip asegura que una talla súper popular nunca pida más del 100% de lo que hay en bodega.
+        df_resultado['Max_Allocable'] = np.clip(df_resultado['LSKD_DC_SOH'] * limite_absoluto * df_resultado['Norm_Curve'], 0, df_resultado['LSKD_DC_SOH'])
+
+        # 4. Crear Matriz de Pesos (¿Qué tiendas califican para este producto?)
+        df_pesos = pd.DataFrame(index=df_resultado.index, columns=tiendas_destino)
+
         for tienda in tiendas_destino:
             grade_tienda = store_grades.get(tienda, 'C')
             peso_tienda = dict_pesos.get(grade_tienda, 0)
             clima_tienda = store_climates.get(tienda, '')
 
-            # Aplicar peso de tienda + multiplicador de la curva de tallas
-            unidades_calculadas = np.floor(df_resultado['Max_Allocable'] * peso_tienda * df_resultado['Curve_Multiplier'])
-            df_resultado[tienda] = unidades_calculadas
-            
-            # REGLA 1: Exclusión "TOP TIER"
+            peso_actual = pd.Series(peso_tienda, index=df_resultado.index)
+
+            # Filtro A: Exclusión "TOP TIER"
             mask_toptier = (df_resultado['Grade'] == 'TOP TIER') & (grade_tienda in ['C', 'D'])
-            df_resultado.loc[mask_toptier, tienda] = 0
+            peso_actual = np.where(mask_toptier, 0, peso_actual)
 
-            # REGLA 2: Exclusión "CLIMATE SPECIFIC"
+            # Filtro B: Exclusión "CLIMATE SPECIFIC"
             if temporada_actual != "Ambos (Ignorar regla)":
-                # Si el producto tiene restricción de clima y la tienda NO es del clima seleccionado, mandamos 0
                 mask_climate = (df_resultado['Grade'] == 'CLIMATE SPECIFIC') & (clima_tienda != temporada_actual)
-                df_resultado.loc[mask_climate, tienda] = 0
+                peso_actual = np.where(mask_climate, 0, peso_actual)
 
-        st.success("✔️ Motor procesado: Curvas de Tallas aplicadas y Filtros de Clima ejecutados.")
+            df_pesos[tienda] = peso_actual
+
+        # 5. Calcular Asignación Real (Repartir la torta matemáticamente)
+        suma_pesos = df_pesos.sum(axis=1)
+
+        for tienda in tiendas_destino:
+            # Fracción = peso de la tienda / suma de todos los pesos válidos de las tiendas participantes
+            fraccion = np.where(suma_pesos > 0, df_pesos[tienda] / suma_pesos, 0)
+            
+            # Asignación = Torta (Max_Allocable) * Fracción de la tienda
+            df_resultado[tienda] = np.floor(df_resultado['Max_Allocable'] * fraccion)
         
         # --- PASO 4: MÉTRICAS VISUALES (PLOTLY) ---
         st.markdown("---")
