@@ -52,7 +52,7 @@ if uploaded_file:
 
         # PASO 3: MOTOR MATEMÁTICO
         # 1. Mapeo de la calificación de cada tienda (Usamos Womens Allocation Grade por defecto)
-        store_grades = pd.Series(df_stores['Womens Allocation Grade'].values, index=df_stores['Store']).to_dict()
+        store_grades = pd.Series(df_stores['Womens_Allocation_Grade'].values, index=df_stores['Store']).to_dict()
         tiendas_destino = df_stores['Store'].dropna().tolist()
 
         # 2. Extraer columnas base
