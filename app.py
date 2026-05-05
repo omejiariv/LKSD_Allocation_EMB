@@ -15,8 +15,13 @@ if uploaded_file:
         # PUNTO DE CONTROL 1
         st.info("Paso 1: Leyendo hoja 'Newness'...")
         df_newness = pd.read_excel(uploaded_file, sheet_name='Newness', engine='openpyxl')
-        # Limpiar columnas vacías fantasma
+        
+        # 1. Limpiar columnas vacías fantasma
         df_newness = df_newness.dropna(how='all', axis=1).dropna(how='all', axis=0)
+        
+        # 2. Eliminar espacios invisibles de los títulos de las columnas (ESTA ES LA SOLUCIÓN)
+        df_newness.columns = df_newness.columns.astype(str).str.strip()
+        
         st.success(f"✔️ 'Newness' cargada: {df_newness.shape[0]} filas.")
         
         # PUNTO DE CONTROL 2
@@ -36,13 +41,14 @@ if uploaded_file:
 
         st.info("Paso 4: Procesando motor matemático...")
         
-        # --- LÓGICA SIMPLIFICADA PARA PRUEBA DE MEMORIA ---
-        df_stores.columns = df_stores.columns.str.strip()
+        # LÓGICA SIMPLIFICADA PARA PRUEBA DE MEMORIA
+        df_stores.columns = df_stores.columns.astype(str).str.strip() # Limpiamos también las tiendas por si acaso
         tiendas_destino = df_stores['Store'].dropna().tolist()
+        
+        # Extraer solo las columnas necesarias (ahora sin espacios fantasma)
         df_resultado = df_newness[['SKU', 'Product Name', 'Size', 'Gender', 'LSKD DC SOH', 'Grade']].copy()
         
         for tienda in tiendas_destino:
-            # Asignamos un 1 provisorio solo para probar que el loop no colapsa
             df_resultado[tienda] = 1 
             
         st.success("✔️ Motor matemático procesado con éxito.")
