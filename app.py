@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 
 # Configuración de la página
-st.set_page_config(page_title="LSKD Allocation Model", layout="wide")
+st.set_page_config(page_title="LKSD Allocation Model", layout="wide")
 
 st.title("📦 Sistema de Asignación Semanal: LSKD")
 st.markdown("Carga el archivo estándar y ajusta los parámetros para generar la distribución por tiendas.")
