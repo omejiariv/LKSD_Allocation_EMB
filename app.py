@@ -13,10 +13,20 @@ uploaded_file = st.file_uploader("Sube el archivo LSKD_Newness_EMB.xlsx", type=[
 
 if uploaded_file:
     with st.spinner('Cargando y procesando datos...'):
-        # Leer las hojas necesarias
-        df_newness = pd.read_excel(uploaded_file, sheet_name='Newness')
-        df_stores = pd.read_excel(uploaded_file, sheet_name='Store grading')
-        df_curve = pd.read_excel(uploaded_file, sheet_name='Size Curve')
+        try:
+            # Cargar el archivo en la memoria del servidor una sola vez
+            xls = pd.ExcelFile(uploaded_file)
+            
+            # Extraer solo las hojas que necesitamos
+            df_newness = pd.read_excel(xls, sheet_name='Newness')
+            df_stores = pd.read_excel(xls, sheet_name='Store grading')
+            df_curve = pd.read_excel(xls, sheet_name='Size Curve')
+            
+            st.success("Archivo cargado correctamente.")
+            
+        except Exception as e:
+            st.error(f"Ocurrió un error al procesar el archivo: {e}")
+            st.stop() # Detiene la ejecución si hay error para no dejar la pantalla en blanco
 
     st.success("Archivo cargado correctamente.")
 
