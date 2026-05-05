@@ -16,10 +16,10 @@ if uploaded_file:
         st.info("Paso 1: Leyendo hoja 'Newness'...")
         df_newness = pd.read_excel(uploaded_file, sheet_name='Newness', engine='openpyxl')
         
-        # 1. Limpiar columnas vacías fantasma
-        df_newness = df_newness.dropna(how='all', axis=1).dropna(how='all', axis=0)
+        # 1. Limpiar SOLO las FILAS vacías (quitamos el axis=1 para no borrar columnas vitales)
+        df_newness = df_newness.dropna(how='all', axis=0)
         
-        # 2. Eliminar espacios invisibles de los títulos de las columnas (ESTA ES LA SOLUCIÓN)
+        # 2. Eliminar espacios invisibles de los títulos
         df_newness.columns = df_newness.columns.astype(str).str.strip()
         
         st.success(f"✔️ 'Newness' cargada: {df_newness.shape[0]} filas.")
