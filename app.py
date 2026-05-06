@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import gc
 import plotly.express as px
+import io
 
 st.set_page_config(page_title="LSKD Allocation Model", layout="wide")
 
@@ -278,16 +279,27 @@ if uploaded_file:
         fig.update_layout(xaxis_tickangle=-45, showlegend=False, margin=dict(t=10, b=10))
         st.plotly_chart(fig, use_container_width=True)
 
+        # --- PASO 5: VISTA PREVIA Y DESCARGA ---
         st.markdown("---")
         st.subheader(txt["matrix_title"])
         st.dataframe(df_resultado)
 
-        csv = df_resultado.to_csv(index=False).encode('utf-8')
+        # Crear un buffer en memoria para el archivo Excel
+        buffer = io.BytesIO()
+        
+        # Escribir el DataFrame en el buffer usando openpyxl
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df_resultado.to_excel(writer, index=False, sheet_name='Asignacion_Semanal')
+            
+        # Obtener los datos del buffer
+        excel_data = buffer.getvalue()
+
+        # Botón de descarga para el archivo .xlsx
         st.download_button(
             label=txt["download_btn"],
-            data=csv,
-            file_name='Asignacion_LSKD_Inteligente.csv',
-            mime='text/csv',
+            data=excel_data,
+            file_name='Asignacion_LSKD_Inteligente.xlsx',
+            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
 
     except Exception as e:
