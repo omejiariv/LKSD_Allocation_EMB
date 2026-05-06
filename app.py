@@ -263,3 +263,7 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"{txt['error_msg']}{e}")
+
+# --- FOOTER ---
+st.divider()
+st.caption("© 2026 Elomejia LSKD | Elo-cations v1.0 | Newness")
