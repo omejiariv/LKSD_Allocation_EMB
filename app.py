@@ -29,7 +29,7 @@ t = {
         "weight_d": "Peso Tiendas D",
         "upload_file": "Sube el archivo LSKD_Newness_EMB.xlsx",
         "processing": "⏱️ Procesando algoritmo de distribución avanzado...",
-        "success_msg": "✔️ Motor procesado: Curvas de Tallas aplicadas y Filtros de Clima ejecutados.",
+        "success_msg": "Motor procesado con éxito.",
         "metrics_title": "📊 Métricas Globales de la Semana",
         "metric_inv": "📦 Inventario Total (DC SOH)",
         "metric_dist": "🚚 Unidades a Distribuir",
@@ -60,7 +60,7 @@ t = {
         ### 📥 Insumos Requeridos y Estructura
         La herramienta requiere la carga semanal de un archivo Excel (`.xlsx`) con **tres hojas estrictamente nombradas**:
         1. **`Newness`**: Base de datos de productos. Debe contener columnas como `SKU`, `Product Name`, `Size`, `Gender_&_Category`, `LSKD DC SOH` (Inventario) y `Grade`.
-        2. **`Store_Grading`**: Base de datos de tiendas. Columnas requeridas: `Store`, `Womens_Allocation_Grade` (A, B, C, D) y `Climate` (verano/invierno).
+        2. **`Store_Grading`**: Base de datos de tiendas. Columnas requeridas: `Store`, `Womens Allocation Grade` (A, B, C, D) y `Climate` (verano/invierno).
         3. **`Size_Curve`**: Matriz de multiplicadores de demanda cruzando Talla vs. Categoría.
         """
     },
@@ -83,7 +83,7 @@ t = {
         "weight_d": "Tier D Weight",
         "upload_file": "Upload LSKD_Newness_EMB.xlsx file",
         "processing": "⏱️ Processing advanced allocation algorithm...",
-        "success_msg": "✔️ Engine processed: Size Curves applied and Climate Filters executed.",
+        "success_msg": "Engine processed successfully.",
         "metrics_title": "📊 Weekly Global Metrics",
         "metric_inv": "📦 Total Inventory (DC SOH)",
         "metric_dist": "🚚 Units to Allocate",
@@ -114,7 +114,7 @@ t = {
         ### 📥 Required Inputs & Structure
         The tool requires the weekly upload of an Excel (`.xlsx`) file with **three strictly named sheets**:
         1. **`Newness`**: Product database. Must contain columns like `SKU`, `Product Name`, `Size`, `Gender_&_Category`, `LSKD DC SOH` (Inventory) and `Grade`.
-        2. **`Store_Grading`**: Store database. Required columns: `Store`, `Womens_Allocation_Grade` (A, B, C, D) and `Climate` (verano/invierno).
+        2. **`Store_Grading`**: Store database. Required columns: `Store`, `Womens Allocation Grade` (A, B, C, D) and `Climate` (verano/invierno).
         3. **`Size_Curve`**: Matrix of demand multipliers crossing Size vs. Category.
         """
     }
@@ -166,88 +166,88 @@ with st.expander(txt["doc_title"]):
 uploaded_file = st.file_uploader(txt["upload_file"], type=["xlsx"], key="cargador_excel", help=txt["tt_upload"])
 
 if uploaded_file:
-    st.warning(txt["processing"])
-    
     try:
-        df_newness = pd.read_excel(uploaded_file, sheet_name='Newness', engine='openpyxl')
-        df_newness = df_newness.dropna(how='all', axis=0)
-        df_newness.columns = df_newness.columns.astype(str).str.strip().str.replace(' ', '_')
-        
-        df_stores = pd.read_excel(uploaded_file, sheet_name='Store_Grading', engine='openpyxl')
-        df_stores = df_stores.dropna(how='all', axis=0)
-        df_stores.columns = df_stores.columns.astype(str).str.strip()
-        
-        df_curve = pd.read_excel(uploaded_file, sheet_name='Size_Curve', engine='openpyxl')
-        df_curve.columns = df_curve.columns.astype(str).str.strip()
+        # Usamos st.spinner para que el mensaje desaparezca al terminar
+        with st.spinner(txt["processing"]):
+            df_newness = pd.read_excel(uploaded_file, sheet_name='Newness', engine='openpyxl')
+            df_newness = df_newness.dropna(how='all', axis=0)
+            df_newness.columns = df_newness.columns.astype(str).str.strip().str.replace(' ', '_')
+            
+            df_stores = pd.read_excel(uploaded_file, sheet_name='Store_Grading', engine='openpyxl')
+            df_stores = df_stores.dropna(how='all', axis=0)
+            df_stores.columns = df_stores.columns.astype(str).str.strip()
+            
+            df_curve = pd.read_excel(uploaded_file, sheet_name='Size_Curve', engine='openpyxl')
+            df_curve.columns = df_curve.columns.astype(str).str.strip()
 
-        # Liberamos memoria
-        gc.collect()
+            gc.collect()
 
-        store_grades = pd.Series(df_stores['Womens_Allocation_Grade'].values, index=df_stores['Store']).to_dict()
-        store_climates = pd.Series(df_stores['Climate'].astype(str).str.lower().str.strip().values, index=df_stores['Store']).to_dict()
-        tiendas_destino = df_stores['Store'].dropna().tolist()
+            store_grades = pd.Series(df_stores['Womens Allocation Grade'].values, index=df_stores['Store']).to_dict()
+            store_climates = pd.Series(df_stores['Climate'].astype(str).str.lower().str.strip().values, index=df_stores['Store']).to_dict()
+            tiendas_destino = df_stores['Store'].dropna().tolist()
 
-        df_resultado = df_newness[['SKU', 'Product_Name', 'Size', 'Gender', 'Gender_&_Category', 'LSKD_DC_SOH', 'Grade']].copy()
-        df_resultado['LSKD_DC_SOH'] = pd.to_numeric(df_resultado['LSKD_DC_SOH'], errors='coerce').fillna(0)
+            df_resultado = df_newness[['SKU', 'Product_Name', 'Size', 'Gender', 'Gender_&_Category', 'LSKD_DC_SOH', 'Grade']].copy()
+            df_resultado['LSKD_DC_SOH'] = pd.to_numeric(df_resultado['LSKD_DC_SOH'], errors='coerce').fillna(0)
 
-        def obtener_multiplicador(row):
-            try:
-                talla = str(row['Size']).strip()
-                categoria = str(row['Gender_&_Category']).strip()
-                fila_curva = df_curve[df_curve['SIZE'].astype(str).str.strip() == talla]
-                if not fila_curva.empty and categoria in fila_curva.columns:
-                    valor = fila_curva.iloc[0][categoria]
-                    return float(valor) if pd.notna(valor) else 1.0
-            except:
-                pass
-            return 1.0
+            def obtener_multiplicador(row):
+                try:
+                    talla = str(row['Size']).strip()
+                    categoria = str(row['Gender_&_Category']).strip()
+                    fila_curva = df_curve[df_curve['SIZE'].astype(str).str.strip() == talla]
+                    if not fila_curva.empty and categoria in fila_curva.columns:
+                        valor = fila_curva.iloc[0][categoria]
+                        return float(valor) if pd.notna(valor) else 1.0
+                except:
+                    pass
+                return 1.0
 
-        df_resultado['Curve_Multiplier'] = df_resultado.apply(obtener_multiplicador, axis=1)
-        df_resultado['Norm_Curve'] = df_resultado.groupby('Product_Name')['Curve_Multiplier'].transform(lambda x: x / x.mean() if x.mean() > 0 else 1)
+            df_resultado['Curve_Multiplier'] = df_resultado.apply(obtener_multiplicador, axis=1)
+            df_resultado['Norm_Curve'] = df_resultado.groupby('Product_Name')['Curve_Multiplier'].transform(lambda x: x / x.mean() if x.mean() > 0 else 1)
 
-        limite_absoluto = (max_send_pct + flex_margin) / 100.0
-        df_resultado['Max_Allocable'] = np.clip(df_resultado['LSKD_DC_SOH'] * limite_absoluto * df_resultado['Norm_Curve'], 0, df_resultado['LSKD_DC_SOH'])
+            limite_absoluto = (max_send_pct + flex_margin) / 100.0
+            df_resultado['Max_Allocable'] = np.clip(df_resultado['LSKD_DC_SOH'] * limite_absoluto * df_resultado['Norm_Curve'], 0, df_resultado['LSKD_DC_SOH'])
 
-        df_pesos = pd.DataFrame(index=df_resultado.index, columns=tiendas_destino)
+            df_pesos = pd.DataFrame(index=df_resultado.index, columns=tiendas_destino)
 
-        for tienda in tiendas_destino:
-            grade_tienda = store_grades.get(tienda, 'C')
-            peso_tienda = dict_pesos.get(grade_tienda, 0)
-            clima_tienda = store_climates.get(tienda, '')
+            for tienda in tiendas_destino:
+                grade_tienda = store_grades.get(tienda, 'C')
+                peso_tienda = dict_pesos.get(grade_tienda, 0)
+                clima_tienda = store_climates.get(tienda, '')
 
-            peso_actual = pd.Series(peso_tienda, index=df_resultado.index)
+                peso_actual = pd.Series(peso_tienda, index=df_resultado.index)
 
-            mask_toptier = (df_resultado['Grade'] == 'TOP TIER') & (grade_tienda in ['C', 'D'])
-            peso_actual = np.where(mask_toptier, 0, peso_actual)
+                mask_toptier = (df_resultado['Grade'] == 'TOP TIER') & (grade_tienda in ['C', 'D'])
+                peso_actual = np.where(mask_toptier, 0, peso_actual)
 
-            if temporada_backend != "ambos":
-                mask_climate = (df_resultado['Grade'] == 'CLIMATE SPECIFIC') & (clima_tienda != temporada_backend)
-                peso_actual = np.where(mask_climate, 0, peso_actual)
+                if temporada_backend != "ambos":
+                    mask_climate = (df_resultado['Grade'] == 'CLIMATE SPECIFIC') & (clima_tienda != temporada_backend)
+                    peso_actual = np.where(mask_climate, 0, peso_actual)
 
-            df_pesos[tienda] = peso_actual
+                df_pesos[tienda] = peso_actual
 
-        for idx in df_resultado.index:
-            max_units = int(np.round(df_resultado.loc[idx, 'Max_Allocable']))
-            pesos_row = df_pesos.loc[idx, tiendas_destino].values.astype(float)
-            suma_pesos = np.sum(pesos_row)
+            for idx in df_resultado.index:
+                max_units = int(np.round(df_resultado.loc[idx, 'Max_Allocable']))
+                pesos_row = df_pesos.loc[idx, tiendas_destino].values.astype(float)
+                suma_pesos = np.sum(pesos_row)
 
-            if suma_pesos == 0 or max_units <= 0:
-                df_resultado.loc[idx, tiendas_destino] = 0
-                continue
+                if suma_pesos == 0 or max_units <= 0:
+                    df_resultado.loc[idx, tiendas_destino] = 0
+                    continue
 
-            exact_alloc = max_units * (pesos_row / suma_pesos)
-            alloc = np.floor(exact_alloc).astype(int)
-            remainder = int(max_units - np.sum(alloc))
-            fractions = exact_alloc - alloc
+                exact_alloc = max_units * (pesos_row / suma_pesos)
+                alloc = np.floor(exact_alloc).astype(int)
+                remainder = int(max_units - np.sum(alloc))
+                fractions = exact_alloc - alloc
 
-            if remainder > 0:
-                indices = np.argsort(fractions)[-remainder:]
-                for i in indices:
-                    alloc[i] += 1
+                if remainder > 0:
+                    indices = np.argsort(fractions)[-remainder:]
+                    for i in indices:
+                        alloc[i] += 1
 
-            df_resultado.loc[idx, tiendas_destino] = alloc
+                df_resultado.loc[idx, tiendas_destino] = alloc
 
-        st.success(txt["success_msg"])
+        # Lanzamos una notificación emergente (Toast) en lugar de un bloque estático
+        st.toast(txt["success_msg"], icon="✅")
         
         st.markdown("---")
         st.subheader(txt["metrics_title"])
