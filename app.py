@@ -118,7 +118,7 @@ dict_pesos = {
 }
 
 # --- APLICACIÓN PRINCIPAL ---
-uploaded_file = st.file_uploader(txt["upload_file"], type=["xlsx"])
+uploaded_file = st.file_uploader(txt["upload_file"], type=["xlsx"], key="cargador_excel")
 
 if uploaded_file:
     st.warning(txt["processing"])
