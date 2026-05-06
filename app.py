@@ -60,7 +60,7 @@ t = {
         ### 📥 Insumos Requeridos y Estructura
         La herramienta requiere la carga semanal de un archivo Excel (`.xlsx`) con **tres hojas estrictamente nombradas**:
         1. **`Newness`**: Base de datos de productos. Debe contener columnas como `SKU`, `Product Name`, `Size`, `Gender_&_Category`, `LSKD DC SOH` (Inventario) y `Grade`.
-        2. **`Store_Grading`**: Base de datos de tiendas. Columnas requeridas: `Store`, `Womens Allocation Grade` (A, B, C, D) y `Climate` (verano/invierno).
+        2. **`Store_Grading`**: Base de datos de tiendas. Columnas requeridas: `Store`, `Womens_Allocation_Grade` (A, B, C, D) y `Climate` (verano/invierno).
         3. **`Size_Curve`**: Matriz de multiplicadores de demanda cruzando Talla vs. Categoría.
         """
     },
@@ -114,7 +114,7 @@ t = {
         ### 📥 Required Inputs & Structure
         The tool requires the weekly upload of an Excel (`.xlsx`) file with **three strictly named sheets**:
         1. **`Newness`**: Product database. Must contain columns like `SKU`, `Product Name`, `Size`, `Gender_&_Category`, `LSKD DC SOH` (Inventory) and `Grade`.
-        2. **`Store_Grading`**: Store database. Required columns: `Store`, `Womens Allocation Grade` (A, B, C, D) and `Climate` (verano/invierno).
+        2. **`Store_Grading`**: Store database. Required columns: `Store`, `Womens_Allocation_Grade` (A, B, C, D) and `Climate` (verano/invierno).
         3. **`Size_Curve`**: Matrix of demand multipliers crossing Size vs. Category.
         """
     }
@@ -182,7 +182,7 @@ if uploaded_file:
 
             gc.collect()
 
-            store_grades = pd.Series(df_stores['Womens Allocation Grade'].values, index=df_stores['Store']).to_dict()
+            store_grades = pd.Series(df_stores['Womens_Allocation_Grade'].values, index=df_stores['Store']).to_dict()
             store_climates = pd.Series(df_stores['Climate'].astype(str).str.lower().str.strip().values, index=df_stores['Store']).to_dict()
             tiendas_destino = df_stores['Store'].dropna().tolist()
 
