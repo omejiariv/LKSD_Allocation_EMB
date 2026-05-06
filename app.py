@@ -64,7 +64,26 @@ t = {
         "size_filter": "Selecciona las tallas a visualizar:",
         "matrix_title": "📋 Matriz de Asignación Final",
         "download_btn": "📥 Descargar Matriz (Excel)",
-        "error_msg": "❌ Ocurrió un error en el cálculo: "
+        "error_msg": "❌ Ocurrió un error en el cálculo: ",
+        "error_msg": "❌ Ocurrió un error en el cálculo: ", # <--- Asegúrate de que esta coma esté aquí
+        
+        "doc_title": "📚 Documentación, Metodología e Insumos",
+        "doc_content": """
+        ### 📌 Resumen de la App
+        Esta aplicación automatiza el proceso semanal de *Allocation* (Asignación de Inventario) para LSKD. Cruza el inventario disponible en bodega (SOH) con la calificación de cada tienda, respetando reglas estrictas de capacidad y adaptándose orgánicamente a la curva de tallas histórica.
+        
+        ### ⚙️ Metodología y Conceptos Clave
+        * **Método del Resto Mayor (Largest Remainder):** Algoritmo utilizado en el paso final del reparto. Evita la "pérdida por redondeo hacia abajo", asegurando que las fracciones decimales sobrantes se sumen y se asignen como unidades enteras a las tiendas más cercanas al siguiente decimal.
+        * **Multiplicador de Curvas Dinámico:** Cruza la talla y categoría de tu producto con la matriz de `Size_Curve`. Si una talla popular tiene un peso alto, automáticamente infla su asignación antes de redondear.
+        * **Selector de Temporada:** Si el producto dice `CLIMATE SPECIFIC`, el motor revisará el clima de cada tienda y dejará en cero (0) a las ciudades que no encajen con la temporada seleccionada.
+        * **Filtro TOP TIER:** Si un producto tiene grado `TOP TIER`, se excluye de las tiendas C y D.
+
+        ### 📥 Insumos Requeridos y Estructura
+        Requiere un Excel (`.xlsx`) con tres hojas:
+        1. **`Newness`**: Base de datos de productos.
+        2. **`Store_Grading`**: Base de datos de tiendas con calificación y clima.
+        3. **`Size_Curve`**: Matriz de multiplicadores de demanda.
+        """
     },
     "English": {
         "title": "📦 LSKD Weekly Allocation System",
@@ -97,12 +116,35 @@ t = {
         "size_filter": "Select sizes to display:",
         "matrix_title": "📋 Final Allocation Matrix",
         "download_btn": "📥 Download Matrix (Excel)",
-        "error_msg": "❌ An error occurred during calculation: "
+        "error_msg": "❌ An error occurred during calculation: ",
+        "error_msg": "❌ An error occurred during calculation: ", # <--- Asegúrate de que esta coma esté aquí
+        
+        # --- AÑADIR DESDE AQUÍ ---
+        "doc_title": "📚 Documentation, Methodology & Inputs",
+        "doc_content": """
+        ### 📌 App Summary
+        This application automates the weekly *Allocation* process for LSKD. It crosses the available warehouse inventory (SOH) with each store's grading, respecting strict capacity rules and adapting organically to the historical size curve.
+        
+        ### ⚙️ Methodology & Key Concepts
+        * **Largest Remainder Method:** Algorithm used in the final distribution step. It avoids "rounding down loss", ensuring exact global targets.
+        * **Dynamic Curve Multiplier:** Crosses the product's size and category with the `Size_Curve` sheet to naturally inflate allocation for popular sizes based on historical weights.
+        * **Season Selector:** If the weekly product is graded `CLIMATE SPECIFIC`, the engine zeroes out the allocation to cities that do not match the selected season.
+        * **TOP TIER Filter:** Excludes `TOP TIER` products from C and D graded stores automatically.
+
+        ### 📥 Required Inputs & Structure
+        Requires an Excel (`.xlsx`) file with three sheets:
+        1. **`Newness`**: Product database.
+        2. **`Store_Grading`**: Store database with grading and climate.
+        3. **`Size_Curve`**: Matrix of demand multipliers.
+        """
     }
 }
 
 txt = t[idioma]
 st.title(txt["title"])
+# --- DOCUMENTACIÓN DESPLEGABLE (SIEMPRE VISIBLE) ---
+with st.expander(txt["doc_title"]):
+    st.markdown(txt["doc_content"])
 
 # --- PANEL LATERAL (CONTROLES) ---
 st.sidebar.header(txt["sidebar_header"])
