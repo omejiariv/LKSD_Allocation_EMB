@@ -37,7 +37,7 @@ t = {
         "metric_pct": "🎯 % de Asignación Global",
         "chart_title": "##### Unidades Asignadas por Tienda",
         "matrix_title": "📋 Matriz de Asignación Final",
-        "download_btn": "📥 Descargar Matriz (CSV)",
+        "download_btn": "📥 Descargar Matriz (xlsx)",
         "error_msg": "❌ Ocurrió un error en el cálculo: ",
         # TOOLTIPS ESPAÑOL
         "tt_limit": "Porcentaje base del inventario total disponible que se permite distribuir a las tiendas.",
