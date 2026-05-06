@@ -144,7 +144,7 @@ if uploaded_file:
         store_climates = pd.Series(df_stores['Climate'].astype(str).str.lower().str.strip().values, index=df_stores['Store']).to_dict()
         tiendas_destino = df_stores['Store'].dropna().tolist()
 
-        # --- PASO 3: MOTOR MATEMÁTICO CORREGIDO ---
+        # --- PASO 3: MOTOR MATEMÁTICO (MÉTODO DEL RESTO MAYOR) ---
         df_resultado = df_newness[['SKU', 'Product_Name', 'Size', 'Gender', 'Gender_&_Category', 'LSKD_DC_SOH', 'Grade']].copy()
         df_resultado['LSKD_DC_SOH'] = pd.to_numeric(df_resultado['LSKD_DC_SOH'], errors='coerce').fillna(0)
 
@@ -164,10 +164,13 @@ if uploaded_file:
         df_resultado['Norm_Curve'] = df_resultado.groupby('Product_Name')['Curve_Multiplier'].transform(lambda x: x / x.mean() if x.mean() > 0 else 1)
 
         limite_absoluto = (max_send_pct + flex_margin) / 100.0
+        
+        # Calculamos la bolsa exacta de unidades que DEBEMOS repartir por fila
         df_resultado['Max_Allocable'] = np.clip(df_resultado['LSKD_DC_SOH'] * limite_absoluto * df_resultado['Norm_Curve'], 0, df_resultado['LSKD_DC_SOH'])
 
         df_pesos = pd.DataFrame(index=df_resultado.index, columns=tiendas_destino)
 
+        # Matriz de validación (qué tienda califica)
         for tienda in tiendas_destino:
             grade_tienda = store_grades.get(tienda, 'C')
             peso_tienda = dict_pesos.get(grade_tienda, 0)
@@ -184,13 +187,36 @@ if uploaded_file:
 
             df_pesos[tienda] = peso_actual
 
-        suma_pesos = df_pesos.sum(axis=1)
+        # DISTRIBUCIÓN AVANZADA: Método del Resto Mayor (Largest Remainder Method)
+        for idx in df_resultado.index:
+            # Unidades totales a repartir en esta fila (Talla específica)
+            max_units = int(np.round(df_resultado.loc[idx, 'Max_Allocable']))
+            pesos_row = df_pesos.loc[idx, tiendas_destino].values.astype(float)
+            suma_pesos = np.sum(pesos_row)
 
-        for tienda in tiendas_destino:
-            fraccion = np.where(suma_pesos > 0, df_pesos[tienda] / suma_pesos, 0)
-            df_resultado[tienda] = np.floor(df_resultado['Max_Allocable'] * fraccion)
+            if suma_pesos == 0 or max_units <= 0:
+                df_resultado.loc[idx, tiendas_destino] = 0
+                continue
 
-        st.success(txt["success_msg"])
+            # 1. Asignación exacta con decimales
+            exact_alloc = max_units * (pesos_row / suma_pesos)
+            
+            # 2. Asignación base (Parte entera)
+            alloc = np.floor(exact_alloc).astype(int)
+            
+            # 3. Unidades sobrantes por culpa de los decimales
+            remainder = int(max_units - np.sum(alloc))
+            fractions = exact_alloc - alloc
+
+            # 4. Repartir el sobrante a las tiendas con el decimal más alto
+            if remainder > 0:
+                # Encontramos los índices de las tiendas con los decimales más cercanos a 1
+                indices = np.argsort(fractions)[-remainder:]
+                for i in indices:
+                    alloc[i] += 1
+
+            # Guardar en el DataFrame
+            df_resultado.loc[idx, tiendas_destino] = alloc
         
         # --- PASO 4: MÉTRICAS VISUALES (PLOTLY) ---
         st.markdown("---")
