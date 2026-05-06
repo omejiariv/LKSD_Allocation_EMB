@@ -5,4 +5,3 @@ pandas
 numpy
 openpyxl
 plotly==5.22.0
-io
