@@ -7,10 +7,8 @@ import plotly.express as px
 st.set_page_config(page_title="LSKD Allocation Model", layout="wide")
 
 # --- SISTEMA DE TRADUCCIONES (i18n) ---
-# Selector de idioma en la parte superior del sidebar
 idioma = st.sidebar.selectbox("🌐 Language / Idioma", ["Español", "English"])
 
-# Diccionario general de textos
 t = {
     "Español": {
         "title": "📦 Sistema de Asignación Semanal: LSKD",
@@ -39,7 +37,32 @@ t = {
         "chart_title": "##### Unidades Asignadas por Tienda",
         "matrix_title": "📋 Matriz de Asignación Final",
         "download_btn": "📥 Descargar Matriz (CSV)",
-        "error_msg": "❌ Ocurrió un error en el cálculo: "
+        "error_msg": "❌ Ocurrió un error en el cálculo: ",
+        # TOOLTIPS ESPAÑOL
+        "tt_limit": "Porcentaje base del inventario total disponible que se permite distribuir a las tiendas.",
+        "tt_flex": "Margen adicional temporal. Permite absorber redondeos y subidas de demanda en tallas populares (ej. M o L) sin romper la regla global.",
+        "tt_season": "Aplica una restricción a los SKU marcados como 'CLIMATE SPECIFIC'. Las tiendas cuyo clima no coincida recibirán 0 unidades.",
+        "tt_weight": "Define qué proporción matemática del envío total se asignará a este nivel de tienda.",
+        "tt_upload": "Carga el archivo Excel estandarizado. Debe contener las hojas: 'Newness', 'Store_Grading' y 'Size_Curve'.",
+        # DOCUMENTACIÓN ESPAÑOL
+        "doc_title": "📚 Documentación, Metodología e Insumos",
+        "doc_content": """
+        ### 📌 Resumen de la App
+        Esta aplicación automatiza el proceso semanal de *Allocation* (Asignación de Inventario) para LSKD. Cruza el inventario disponible en bodega (SOH) con la calificación de cada tienda, respetando reglas estrictas de capacidad y adaptándose orgánicamente a la curva de tallas histórica.
+        
+        ### ⚙️ Metodología y Conceptos Clave
+        * **Método del Resto Mayor (Largest Remainder):** Algoritmo utilizado en el paso final del reparto. Evita la "pérdida por redondeo hacia abajo", asegurando que las fracciones decimales sobrantes se sumen y se asignen como unidades enteras a las tiendas más cercanas al siguiente decimal. Esto garantiza que el porcentaje global exacto se cumpla siempre.
+        * **Multiplicador de Curvas Dinámico (`obtener_multiplicador`):** El código cruza la columna `Size` y `Gender_&_Category` de tu producto con la hoja de `Size_Curve`. Si una talla "S" o "M" tiene un peso de 2.0 en la matriz, automáticamente infla la asignación para esas tallas antes de hacer el redondeo hacia abajo, respetando las proporciones orgánicas de venta de cada categoría.
+        * **Selector de Temporada (`mask_climate`):** Botones interactivos para "Verano", "Invierno" o "Ambos". Si el producto de la semana dice `CLIMATE SPECIFIC` en su columna de Grado, el motor revisará el clima asignado a cada tienda en `Store_Grading` y dejará en cero (0) la asignación a las ciudades que no encajen.
+        * **Filtro TOP TIER:** Si un producto tiene el grado `TOP TIER`, se excluye automáticamente de las tiendas con calificación C y D.
+        * **Dashboards Integrados:** Añadimos `plotly.express` para inyectar KPIs visuales. Automáticamente consolidamos las sumas de toda la tabla para darte el total de bodega y un diagrama de barras interactivo (ordenado de mayor a menor) donde puedes pasar el ratón para ver exactamente cuántas unidades viajarán a cada tienda esta semana.
+
+        ### 📥 Insumos Requeridos y Estructura
+        La herramienta requiere la carga semanal de un archivo Excel (`.xlsx`) con **tres hojas estrictamente nombradas**:
+        1. **`Newness`**: Base de datos de productos. Debe contener columnas como `SKU`, `Product Name`, `Size`, `Gender_&_Category`, `LSKD DC SOH` (Inventario) y `Grade`.
+        2. **`Store_Grading`**: Base de datos de tiendas. Columnas requeridas: `Store`, `Womens Allocation Grade` (A, B, C, D) y `Climate` (verano/invierno).
+        3. **`Size_Curve`**: Matriz de multiplicadores de demanda cruzando Talla vs. Categoría.
+        """
     },
     "English": {
         "title": "📦 LSKD Weekly Allocation System",
@@ -68,32 +91,51 @@ t = {
         "chart_title": "##### Units Allocated per Store",
         "matrix_title": "📋 Final Allocation Matrix",
         "download_btn": "📥 Download Matrix (CSV)",
-        "error_msg": "❌ An error occurred during calculation: "
+        "error_msg": "❌ An error occurred during calculation: ",
+        # TOOLTIPS INGLÉS
+        "tt_limit": "Base percentage of total available inventory allowed to be distributed to stores.",
+        "tt_flex": "Additional buffer margin. Allows absorbing roundings and high demand in popular sizes (e.g., M or L) without breaking the global rule.",
+        "tt_season": "Applies a restriction to SKUs marked as 'CLIMATE SPECIFIC'. Stores whose climate does not match will receive 0 units.",
+        "tt_weight": "Defines what mathematical proportion of the total shipment goes to this store tier.",
+        "tt_upload": "Upload the standardized Excel file. Must contain tabs: 'Newness', 'Store_Grading' and 'Size_Curve'.",
+        # DOCUMENTACIÓN INGLÉS
+        "doc_title": "📚 Documentation, Methodology & Inputs",
+        "doc_content": """
+        ### 📌 App Summary
+        This application automates the weekly *Allocation* process for LSKD. It crosses the available warehouse inventory (SOH) with each store's grading, respecting strict capacity rules and adapting organically to the historical size curve.
+        
+        ### ⚙️ Methodology & Key Concepts
+        * **Largest Remainder Method:** Algorithm used in the final distribution step. It avoids "rounding down loss", ensuring that remaining decimal fractions are summed and assigned as whole units to the stores closest to the next decimal. This guarantees exact global targets.
+        * **Dynamic Curve Multiplier (`obtener_multiplicador`):** The code crosses the product's `Size` and `Gender_&_Category` with the `Size_Curve` sheet. If a size "S" or "M" has a weight of 2.0 in the matrix, it automatically inflates the allocation for those sizes before rounding down, respecting the organic sales proportions.
+        * **Season Selector (`mask_climate`):** Interactive buttons for "Summer", "Winter", or "Both". If the weekly product is graded `CLIMATE SPECIFIC`, the engine checks the climate assigned to each store in `Store_Grading` and zeroes out the allocation to unmatched cities.
+        * **TOP TIER Filter:** If a product is graded `TOP TIER`, it is automatically excluded from C and D graded stores.
+        * **Integrated Dashboards:** We added `plotly.express` to inject visual KPIs. We automatically consolidate the sums of the entire table to give you total SOH and an interactive bar chart (sorted high to low) where you can hover to see exactly how many units will travel to each store this week.
+
+        ### 📥 Required Inputs & Structure
+        The tool requires the weekly upload of an Excel (`.xlsx`) file with **three strictly named sheets**:
+        1. **`Newness`**: Product database. Must contain columns like `SKU`, `Product Name`, `Size`, `Gender_&_Category`, `LSKD DC SOH` (Inventory) and `Grade`.
+        2. **`Store_Grading`**: Store database. Required columns: `Store`, `Womens Allocation Grade` (A, B, C, D) and `Climate` (verano/invierno).
+        3. **`Size_Curve`**: Matrix of demand multipliers crossing Size vs. Category.
+        """
     }
 }
 
-# Variable rápida para acceder a los textos del idioma seleccionado
 txt = t[idioma]
-
 st.title(txt["title"])
 
 # --- PANEL LATERAL (CONTROLES) ---
 st.sidebar.header(txt["sidebar_header"])
 
-# 1. Reglas de Bodega
 st.sidebar.subheader(txt["limit_bodega_title"])
-max_send_pct = st.sidebar.slider(txt["limit_bodega_slider"], min_value=10.0, max_value=40.0, value=30.0, step=1.0)
-flex_margin = st.sidebar.slider(txt["flex_margin"], min_value=0.0, max_value=5.0, value=3.0, step=0.5)
+max_send_pct = st.sidebar.slider(txt["limit_bodega_slider"], min_value=10.0, max_value=40.0, value=30.0, step=1.0, help=txt["tt_limit"])
+flex_margin = st.sidebar.slider(txt["flex_margin"], min_value=0.0, max_value=5.0, value=3.0, step=0.5, help=txt["tt_flex"])
 
-# 2. Regla de Clima
 st.sidebar.subheader(txt["season_filter_title"])
 st.sidebar.markdown(txt["season_filter_desc"])
 
-# Opciones de clima traducidas pero mapeadas al backend en español (para cruzar con el Excel)
 opciones_clima_ui = [txt["season_summer"], txt["season_winter"], txt["season_both"]]
-seleccion_clima_ui = st.sidebar.radio(txt["season_target"], opciones_clima_ui)
+seleccion_clima_ui = st.sidebar.radio(txt["season_target"], opciones_clima_ui, help=txt["tt_season"])
 
-# Mapeo al valor real del backend
 if seleccion_clima_ui == txt["season_summer"]:
     temporada_backend = "verano"
 elif seleccion_clima_ui == txt["season_winter"]:
@@ -101,12 +143,11 @@ elif seleccion_clima_ui == txt["season_winter"]:
 else:
     temporada_backend = "ambos"
 
-# 3. Pesos de Tiendas
 st.sidebar.subheader(txt["weights_title"])
-peso_a = st.sidebar.number_input(txt["weight_a"], value=40)
-peso_b = st.sidebar.number_input(txt["weight_b"], value=30)
-peso_c = st.sidebar.number_input(txt["weight_c"], value=20)
-peso_d = st.sidebar.number_input(txt["weight_d"], value=10)
+peso_a = st.sidebar.number_input(txt["weight_a"], value=40, help=txt["tt_weight"])
+peso_b = st.sidebar.number_input(txt["weight_b"], value=30, help=txt["tt_weight"])
+peso_c = st.sidebar.number_input(txt["weight_c"], value=20, help=txt["tt_weight"])
+peso_d = st.sidebar.number_input(txt["weight_d"], value=10, help=txt["tt_weight"])
 
 total_peso = peso_a + peso_b + peso_c + peso_d
 if total_peso == 0: total_peso = 1 
@@ -117,14 +158,17 @@ dict_pesos = {
     'D': peso_d / total_peso
 }
 
+# --- DOCUMENTACIÓN DESPLEGABLE (SIEMPRE VISIBLE) ---
+with st.expander(txt["doc_title"]):
+    st.markdown(txt["doc_content"])
+
 # --- APLICACIÓN PRINCIPAL ---
-uploaded_file = st.file_uploader(txt["upload_file"], type=["xlsx"], key="cargador_excel")
+uploaded_file = st.file_uploader(txt["upload_file"], type=["xlsx"], key="cargador_excel", help=txt["tt_upload"])
 
 if uploaded_file:
     st.warning(txt["processing"])
     
     try:
-        # --- PASO 1: CARGA Y LIMPIEZA ---
         df_newness = pd.read_excel(uploaded_file, sheet_name='Newness', engine='openpyxl')
         df_newness = df_newness.dropna(how='all', axis=0)
         df_newness.columns = df_newness.columns.astype(str).str.strip().str.replace(' ', '_')
@@ -136,15 +180,13 @@ if uploaded_file:
         df_curve = pd.read_excel(uploaded_file, sheet_name='Size_Curve', engine='openpyxl')
         df_curve.columns = df_curve.columns.astype(str).str.strip()
 
-        del uploaded_file
+        # Liberamos memoria
         gc.collect()
 
-        # --- PASO 2: MAPEO DE DICCIONARIOS ---
         store_grades = pd.Series(df_stores['Womens_Allocation_Grade'].values, index=df_stores['Store']).to_dict()
         store_climates = pd.Series(df_stores['Climate'].astype(str).str.lower().str.strip().values, index=df_stores['Store']).to_dict()
         tiendas_destino = df_stores['Store'].dropna().tolist()
 
-        # --- PASO 3: MOTOR MATEMÁTICO (MÉTODO DEL RESTO MAYOR) ---
         df_resultado = df_newness[['SKU', 'Product_Name', 'Size', 'Gender', 'Gender_&_Category', 'LSKD_DC_SOH', 'Grade']].copy()
         df_resultado['LSKD_DC_SOH'] = pd.to_numeric(df_resultado['LSKD_DC_SOH'], errors='coerce').fillna(0)
 
@@ -164,13 +206,10 @@ if uploaded_file:
         df_resultado['Norm_Curve'] = df_resultado.groupby('Product_Name')['Curve_Multiplier'].transform(lambda x: x / x.mean() if x.mean() > 0 else 1)
 
         limite_absoluto = (max_send_pct + flex_margin) / 100.0
-        
-        # Calculamos la bolsa exacta de unidades que DEBEMOS repartir por fila
         df_resultado['Max_Allocable'] = np.clip(df_resultado['LSKD_DC_SOH'] * limite_absoluto * df_resultado['Norm_Curve'], 0, df_resultado['LSKD_DC_SOH'])
 
         df_pesos = pd.DataFrame(index=df_resultado.index, columns=tiendas_destino)
 
-        # Matriz de validación (qué tienda califica)
         for tienda in tiendas_destino:
             grade_tienda = store_grades.get(tienda, 'C')
             peso_tienda = dict_pesos.get(grade_tienda, 0)
@@ -187,9 +226,7 @@ if uploaded_file:
 
             df_pesos[tienda] = peso_actual
 
-        # DISTRIBUCIÓN AVANZADA: Método del Resto Mayor (Largest Remainder Method)
         for idx in df_resultado.index:
-            # Unidades totales a repartir en esta fila (Talla específica)
             max_units = int(np.round(df_resultado.loc[idx, 'Max_Allocable']))
             pesos_row = df_pesos.loc[idx, tiendas_destino].values.astype(float)
             suma_pesos = np.sum(pesos_row)
@@ -198,27 +235,20 @@ if uploaded_file:
                 df_resultado.loc[idx, tiendas_destino] = 0
                 continue
 
-            # 1. Asignación exacta con decimales
             exact_alloc = max_units * (pesos_row / suma_pesos)
-            
-            # 2. Asignación base (Parte entera)
             alloc = np.floor(exact_alloc).astype(int)
-            
-            # 3. Unidades sobrantes por culpa de los decimales
             remainder = int(max_units - np.sum(alloc))
             fractions = exact_alloc - alloc
 
-            # 4. Repartir el sobrante a las tiendas con el decimal más alto
             if remainder > 0:
-                # Encontramos los índices de las tiendas con los decimales más cercanos a 1
                 indices = np.argsort(fractions)[-remainder:]
                 for i in indices:
                     alloc[i] += 1
 
-            # Guardar en el DataFrame
             df_resultado.loc[idx, tiendas_destino] = alloc
+
+        st.success(txt["success_msg"])
         
-        # --- PASO 4: MÉTRICAS VISUALES (PLOTLY) ---
         st.markdown("---")
         st.subheader(txt["metrics_title"])
         
@@ -248,7 +278,6 @@ if uploaded_file:
         fig.update_layout(xaxis_tickangle=-45, showlegend=False, margin=dict(t=10, b=10))
         st.plotly_chart(fig, use_container_width=True)
 
-        # --- PASO 5: VISTA PREVIA Y DESCARGA ---
         st.markdown("---")
         st.subheader(txt["matrix_title"])
         st.dataframe(df_resultado)
