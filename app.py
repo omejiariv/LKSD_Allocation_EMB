@@ -285,11 +285,11 @@ if st.session_state.datos_cargados:
         fecha_mostrar = st.session_state.fecha_es if idioma == "Español" else st.session_state.fecha_en
         st.subheader(f"{txt['metrics_title']} ({fecha_mostrar})")
 
-        # 2. TRUCO DE MAGIA: Creamos "Contenedores vacíos" en el orden que queremos mostrarlos
+        # 2. Creamos los contenedores vacíos (ahora incluimos uno para alertas)
         cont_metricas = st.container()
+        cont_alertas = st.container()  # <--- NUEVO
         cont_graficos = st.container()
         
-        # 3. Mostramos y ejecutamos la Matriz Editable PRIMERO (para capturar los cambios)
         st.markdown("---")
         st.subheader(txt["matrix_title"])
         
@@ -300,14 +300,20 @@ if st.session_state.datos_cargados:
 
         columnas_protegidas = ['SKU', 'Product_Name', 'Size', 'Gender', 'Gender_&_Category', 'LSKD_DC_SOH', 'Grade', 'Curve_Multiplier', 'Norm_Curve', 'Max_Allocable']
         
+        # 3. Inicializamos una "llave" para el editor en la memoria
+        if 'editor_key' not in st.session_state:
+            st.session_state.editor_key = 0
+
+        # 4. El editor ahora usa la llave dinámica
         df_editado = st.data_editor(
             df_resultado,
             disabled=columnas_protegidas,
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
+            key=f"editor_matriz_{st.session_state.editor_key}"
         )
 
-        # 4. Inyectamos las Métricas en el contenedor de arriba usando df_editado
+        # 5. Calculamos e inyectamos las Métricas
         with cont_metricas:
             total_inventario = df_editado['LSKD_DC_SOH'].sum()
             df_solo_tiendas = df_editado[tiendas_destino]
@@ -319,7 +325,25 @@ if st.session_state.datos_cargados:
             pct_global = (total_asignado / total_inventario * 100) if total_inventario > 0 else 0
             col3.metric(txt["metric_pct"], f"{pct_global:.1f}%")
 
-        # 5. Inyectamos los Gráficos en el contenedor de arriba usando df_editado
+        # 6. LÓGICA DE ALERTA Y RECALCULO AUTOMÁTICO
+        with cont_alertas:
+            limite_maximo_permitido = max_send_pct + flex_margin
+            
+            # Si el % sobrepasa la regla configurada en el panel izquierdo...
+            if pct_global > limite_maximo_permitido:
+                if idioma == "Español":
+                    st.warning(f"⚠️ **Límite Excedido:** Tus ajustes manuales han elevado la asignación global al **{pct_global:.1f}%**, superando la regla máxima permitida (**{limite_maximo_permitido}%**).")
+                    btn_text = "🔄 Restaurar Regla Matemática (Borrar Cambios Manuales)"
+                else:
+                    st.warning(f"⚠️ **Limit Exceeded:** Your manual edits raised the global allocation to **{pct_global:.1f}%**, exceeding the maximum allowed rule (**{limite_maximo_permitido}%**).")
+                    btn_text = "🔄 Reset to Mathematical Rule (Clear Manual Edits)"
+                
+                # Si el usuario hace clic en el botón, cambiamos la llave y recargamos la página
+                if st.button(btn_text):
+                    st.session_state.editor_key += 1
+                    st.rerun()
+
+        # 7. Inyectamos los Gráficos
         with cont_graficos:
             graf_col1, graf_col2 = st.columns(2)
 
@@ -338,7 +362,6 @@ if st.session_state.datos_cargados:
 
             with graf_col2:
                 st.markdown(txt["chart_title_size"])
-                # Calculamos el total por talla sumando solo las columnas de las tiendas en df_editado
                 df_editado_tallas = df_editado.copy()
                 df_editado_tallas['Total_Asignado'] = df_solo_tiendas.sum(axis=1)
                 df_tallas = df_editado_tallas.groupby('Size')['Total_Asignado'].sum().reset_index()
@@ -355,7 +378,7 @@ if st.session_state.datos_cargados:
                 fig_size.update_layout(margin=dict(t=10, b=10))
                 st.plotly_chart(fig_size, use_container_width=True)
 
-        # 6. Botón de descarga al final de la página
+        # 8. Descarga de Excel
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df_editado.to_excel(writer, index=False, sheet_name='Asignacion_Semanal')
@@ -370,7 +393,7 @@ if st.session_state.datos_cargados:
 
     except Exception as e:
         st.error(f"{txt['error_msg']}{e}")
-
+        
 # --- FOOTER ---
 st.divider()
 st.caption("© 2026 Elomejia LSKD | Elo-cations v1.0 | Newness")
