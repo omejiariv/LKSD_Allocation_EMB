@@ -16,10 +16,15 @@ if 'datos_cargados' not in st.session_state:
     st.session_state.df_newness = None
     st.session_state.df_stores = None
     st.session_state.df_curve = None
-    st.session_state.df_metrics = None  # <--- AGREGAR ESTA LÍNEA
+    st.session_state.df_metrics = None
     st.session_state.fecha_es = None
     st.session_state.fecha_en = None
     st.session_state.last_file_id = None
+    st.session_state.editor_key = 0  # Llave maestra del editor
+
+# Función que resetea la tabla visual al mover un slider
+def reset_editor():
+    st.session_state.editor_key += 1
 
 # --- FUNCIONES DE FECHA ---
 def obtener_fecha_es():
@@ -160,8 +165,8 @@ with st.expander(txt["doc_title"]):
 st.sidebar.header(txt["sidebar_header"])
 
 st.sidebar.subheader(txt["limit_bodega_title"])
-max_send_pct = st.sidebar.slider(txt["limit_bodega_slider"], min_value=10.0, max_value=40.0, value=30.0, step=1.0)
-flex_margin = st.sidebar.slider(txt["flex_margin"], min_value=0.0, max_value=5.0, value=3.0, step=0.5)
+max_send_pct = st.sidebar.slider(txt["limit_bodega_slider"], min_value=10.0, max_value=40.0, value=30.0, step=1.0, on_change=reset_editor)
+flex_margin = st.sidebar.slider(txt["flex_margin"], min_value=0.0, max_value=5.0, value=3.0, step=0.5, on_change=reset_editor)
 
 st.sidebar.subheader(txt["season_filter_title"])
 st.sidebar.markdown(txt["season_filter_desc"])
@@ -181,7 +186,7 @@ dict_pesos = {'A': peso_a / total_peso, 'B': peso_b / total_peso, 'C': peso_c / 
 
 # --- NUEVO CONTROL: REPOSICIÓN (PULL) ---
 st.sidebar.subheader(txt["target_woc_title"])
-target_woc = st.sidebar.slider(txt["target_woc_slider"], min_value=1, max_value=8, value=4, help=txt["tt_woc"])
+target_woc = st.sidebar.slider(txt["target_woc_slider"], min_value=1, max_value=8, value=4, help=txt["tt_woc"], on_change=reset_editor)
 
 
 # --- ACCESO ADMINISTRADOR Y CARGA DE ARCHIVO ---
