@@ -200,7 +200,6 @@ with st.expander(txt["admin_title"], expanded=not st.session_state.datos_cargado
         if uploaded_file:
             current_file_id = uploaded_file.name + str(uploaded_file.size)
             
-            # Solo procesamos si es un archivo nuevo, sino usamos la memoria
             if st.session_state.last_file_id != current_file_id:
                 with st.spinner(txt["processing"]):
                     # 1. Leer hojas base
@@ -213,24 +212,27 @@ with st.expander(txt["admin_title"], expanded=not st.session_state.datos_cargado
                     df_curve = pd.read_excel(uploaded_file, sheet_name='Size_Curve', engine='openpyxl')
                     df_curve.columns = df_curve.columns.astype(str).str.strip()
 
-                    # 2. Leer Hoja SOH (Actualiza el inventario en tiempo real)
+                    # 2. Leer Hoja SOH (Dentro del mismo archivo)
                     try:
                         df_soh_sheet = pd.read_excel(uploaded_file, sheet_name='SOH', engine='openpyxl')
                         df_soh_sheet.columns = df_soh_sheet.columns.astype(str).str.strip()
-                        soh_map = pd.Series(df_soh_sheet['SOH_Quantity'].values, index=df_soh_sheet['SKU'].astype(str).str.upper().str.strip()).to_dict()
+                        # Detecta la columna de cantidad dinámicamente
+                        col_soh = [c for c in df_soh_sheet.columns if 'SOH' in c.upper()][0] 
+                        soh_map = pd.Series(df_soh_sheet[col_soh].values, index=df_soh_sheet['SKU'].astype(str).str.upper().str.strip()).to_dict()
                         df_newness['LSKD_DC_SOH'] = df_newness['SKU'].astype(str).str.upper().str.strip().map(soh_map).fillna(df_newness['LSKD_DC_SOH'])
-                    except:
-                        pass # Si no existe la hoja SOH, no hace nada y usa el dato de Newness
+                    except Exception as e:
+                        st.warning(f"⚠️ No se encontró la hoja 'SOH' o hubo un error. Usando inventario base de Newness. ({e})")
 
                     # 3. Leer Hoja Store_Metrics
                     try:
                         df_metrics = pd.read_excel(uploaded_file, sheet_name='Store_Metrics', engine='openpyxl')
                         df_metrics.columns = df_metrics.columns.astype(str).str.strip()
                         st.session_state.df_metrics = df_metrics
-                    except:
+                    except Exception as e:
+                        st.warning(f"⚠️ No se encontró la hoja 'Store_Metrics'. Motor PULL desactivado. ({e})")
                         st.session_state.df_metrics = None
 
-                    # Guardar en memoria
+                    # Guardar en memoria RAM
                     st.session_state.df_newness = df_newness
                     st.session_state.df_stores = df_stores
                     st.session_state.df_curve = df_curve
@@ -241,32 +243,30 @@ with st.expander(txt["admin_title"], expanded=not st.session_state.datos_cargado
                     
                     st.toast(txt["success_msg"], icon="✅")
 
-# --- MOTOR MATEMÁTICO Y DASHBOARD (EJECUTADO DESDE LA MEMORIA) ---
+# --- MOTOR MATEMÁTICO Y DASHBOARD ---
 if st.session_state.datos_cargados:
     try:
-        # Recuperamos los datos limpios de la memoria
         df_newness = st.session_state.df_newness.copy()
         df_stores = st.session_state.df_stores.copy()
         df_curve = st.session_state.df_curve.copy()
 
-        # Recuperamos las métricas con limpieza extrema
         if st.session_state.df_metrics is not None:
             df_metrics = st.session_state.df_metrics.copy()
-            # Forzamos Mayúsculas y quitamos espacios para asegurar el cruce
             df_metrics['Key'] = df_metrics['SKU'].astype(str).str.upper().str.strip() + "_" + df_metrics['Store'].astype(str).str.upper().str.strip()
             metrics_dict = df_metrics.set_index('Key').to_dict('index')
         else:
             metrics_dict = {}
 
-        # Mapeos base
-        store_grades = pd.Series(df_stores['Womens_Allocation_Grade'].values, index=df_stores['Store']).to_dict()
-        store_climates = pd.Series(df_stores['Climate'].astype(str).str.lower().str.strip().values, index=df_stores['Store']).to_dict()
+        # MAPEOS BLINDADOS (Elimina espacios invisibles y problemas de mayúsculas en Excel)
+        col_grade = [c for c in df_stores.columns if 'WOMEN' in c.upper()][0] # Detecta 'Womens Allocation Grade' automáticamente
+        store_grades = pd.Series(df_stores[col_grade].astype(str).str.upper().str.strip().values, index=df_stores['Store'].astype(str).str.upper().str.strip()).to_dict()
+        store_climates = pd.Series(df_stores['Climate'].astype(str).str.lower().str.strip().values, index=df_stores['Store'].astype(str).str.upper().str.strip()).to_dict()
         tiendas_destino = df_stores['Store'].dropna().tolist()
 
         df_resultado = df_newness[['SKU', 'Product_Name', 'Size', 'Gender', 'Gender_&_Category', 'LSKD_DC_SOH', 'Grade']].copy()
         df_resultado['LSKD_DC_SOH'] = pd.to_numeric(df_resultado['LSKD_DC_SOH'], errors='coerce').fillna(0)
 
-        # 1. Curva Estática (Para Newness)
+        # 1. Curva Estática
         def obtener_multiplicador(row):
             try:
                 talla = str(row['Size']).strip()
@@ -287,8 +287,6 @@ if st.session_state.datos_cargados:
 
         for idx, row in df_resultado.iterrows():
             sku_limpio = str(row['SKU']).upper().strip()
-            
-            # Forzamos conversión a decimales (floats) para evitar que Python los vuelva CERO
             soh_bodega = float(row['LSKD_DC_SOH'])
             norm_curve = float(row['Norm_Curve'])
             
@@ -298,52 +296,47 @@ if st.session_state.datos_cargados:
 
             for tienda in tiendas_destino:
                 t_limpia = str(tienda).upper().strip()
-                grade_tienda = store_grades.get(tienda, 'C')
-                clima_tienda = store_climates.get(tienda, '')
+                
+                # Extracción súper segura del grado
+                grade_tienda = store_grades.get(t_limpia, 'C') 
+                clima_tienda = store_climates.get(t_limpia, '')
 
                 key = f"{sku_limpio}_{t_limpia}"
                 metricas = metrics_dict.get(key, {})
                 
-                # Extracción segura de datos de la tienda
-                try:
-                    ventas = float(metricas.get('Sales_L4W', 0))
-                except:
-                    ventas = 0.0
+                try: ventas = float(metricas.get('Sales_L4W', 0))
+                except: ventas = 0.0
                     
-                try:
-                    soh_tienda = float(metricas.get('Store_SOH', 0))
-                except:
-                    soh_tienda = 0.0
+                try: soh_tienda = float(metricas.get('Store_SOH', 0))
+                except: soh_tienda = 0.0
                 
                 if ventas > 0:
                     es_reposicion = True
-                    # Lógica PULL: Necesidad = Target - SOH Actual
                     target_stock = (ventas / 4.0) * float(target_woc)
                     necesidad = target_stock - soh_tienda
                     peso_final = max(necesidad, 0.001)
                     if necesidad > 0: 
                         suma_necesidades += necesidad
                 else:
-                    # Lógica PUSH: Peso según el grado (A, B, C, D)
+                    # Garantiza que el dict_pesos lea la letra exacta (A, B, C, D)
                     peso_final = float(dict_pesos.get(grade_tienda, 0))
 
-                # REINTEGRAMOS LOS FILTROS INTELIGENTES (Top Tier y Clima)
-                if (row['Grade'] == 'TOP TIER' and grade_tienda in ['C', 'D']) or \
-                   (temporada_backend != "ambos" and row['Grade'] == 'CLIMATE SPECIFIC' and clima_tienda != temporada_backend):
+                # Filtros Top Tier y Clima
+                if (str(row['Grade']).strip().upper() == 'TOP TIER' and grade_tienda in ['C', 'D']) or \
+                   (temporada_backend != "ambos" and str(row['Grade']).strip().upper() == 'CLIMATE SPECIFIC' and clima_tienda != temporada_backend):
                     peso_final = 0.0
 
                 pesos_fila.append(peso_final)
             
             df_pesos.loc[idx] = pesos_fila
 
-            # MAGIA HÍBRIDA BLINDADA
+            # MAGIA HÍBRIDA
             if es_reposicion:
                 max_unidades = min(suma_necesidades, soh_bodega)
             else:
                 limite_decimal = (float(max_send_pct) + float(flex_margin)) / 100.0
                 max_unidades = soh_bodega * limite_decimal * norm_curve
             
-            # Aseguramos que la asignación no sea negativa ni mayor a la bodega
             allocable_real.append(max(0.0, min(max_unidades, soh_bodega)))
     
         df_resultado['Max_Allocable'] = allocable_real
