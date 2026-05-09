@@ -11,12 +11,12 @@ from datetime import datetime
 st.set_page_config(page_title="LSKD Allocation Model", layout="wide")
 
 # --- INICIALIZACIÓN DE MEMORIA (SESSION STATE) ---
-# Esto garantiza que los datos no desaparezcan de la pantalla al hacer cambios
 if 'datos_cargados' not in st.session_state:
     st.session_state.datos_cargados = False
     st.session_state.df_newness = None
     st.session_state.df_stores = None
     st.session_state.df_curve = None
+    st.session_state.df_metrics = None  # <--- AGREGAR ESTA LÍNEA
     st.session_state.fecha_es = None
     st.session_state.fecha_en = None
     st.session_state.last_file_id = None
@@ -75,19 +75,20 @@ t = {
         "doc_title": "📚 Documentación, Metodología e Insumos",
         "doc_content": """
         ### 📌 Resumen de la App
-        Esta aplicación automatiza el proceso semanal de *Allocation* (Asignación de Inventario) para LSKD. Cruza el inventario disponible en bodega (SOH) con la calificación de cada tienda, respetando reglas estrictas de capacidad y adaptándose orgánicamente a la curva de tallas histórica.
+        Esta aplicación automatiza el proceso semanal de *Allocation* y Reposición para LSKD. Cruza el inventario de bodega (SOH) con el desempeño real de las tiendas, permitiendo un flujo de inventario inteligente y dinámico.
         
         ### ⚙️ Metodología y Conceptos Clave
-        * **Método del Resto Mayor (Largest Remainder):** Algoritmo utilizado en el paso final del reparto. Evita la "pérdida por redondeo hacia abajo", asegurando que las fracciones decimales sobrantes se sumen y se asignen como unidades enteras a las tiendas más cercanas al siguiente decimal.
-        * **Multiplicador de Curvas Dinámico:** Cruza la talla y categoría de tu producto con la matriz de `Size_Curve`. Si una talla popular tiene un peso alto, automáticamente infla su asignación antes de redondear.
-        * **Selector de Temporada:** Si el producto dice `CLIMATE SPECIFIC`, el motor revisará el clima de cada tienda y dejará en cero (0) a las ciudades que no encajen con la temporada seleccionada.
-        * **Filtro TOP TIER:** Si un producto tiene grado `TOP TIER`, se excluye de las tiendas C y D.
+        * **Híbrido Push/Pull:** Si el producto tiene historial de ventas, el sistema hace **Reposición (Pull)** basándose en el Target WOC. Si es nuevo, usa **Pesos (Push)** por grado de tienda (A, B, C, D).
+        * **Target WOC (Weeks of Cover):** Calcula cuántas semanas de venta queremos cubrir. La app enviará unidades solo si el stock actual de la tienda no alcanza para cubrir el objetivo de semanas.
+        * **Método del Resto Mayor:** Garantiza que el 100% de las unidades calculadas se repartan sin perderse por redondeos decimales.
+        * **Filtros Inteligentes:** Aplica reglas de Clima (verano/invierno) y exclusión de tiendas C/D para productos TOP TIER.
 
         ### 📥 Insumos Requeridos y Estructura
-        Requiere un Excel (`.xlsx`) con tres hojas:
-        1. **`Newness`**: Base de datos de productos.
-        2. **`Store_Grading`**: Base de datos de tiendas con calificación y clima.
-        3. **`Size_Curve`**: Matriz de multiplicadores de demanda.
+        Requiere un Excel (`.xlsx`) con cuatro hojas:
+        1. **`Newness`**: Base de productos a enviar.
+        2. **`Store_Grading`**: Calificación y clima de tiendas.
+        3. **`Size_Curve`**: Curva de tallas estática (para productos nuevos).
+        4. **`Store_Metrics`**: Ventas L4W e inventario actual por tienda (para Reposición).
         """
     },
     "English": {
@@ -285,14 +286,14 @@ if st.session_state.datos_cargados:
                 ventas = metricas.get('Sales_L4W', 0)
                 soh_tienda = metricas.get('Store_SOH', 0)
                 
+                # LÓGICA REPOSICIÓN: Necesidad = (Venta Semanal * WOC) - Stock Actual
                 if ventas > 0:
-                    # LÓGICA REPOSICIÓN: Necesidad = (Venta Semanal * WOC) - Stock Actual
                     venta_semanal = ventas / 4
                     target_stock = venta_semanal * target_woc
-                    necesidad = max(target_stock - soh_tienda, 0)
-                    peso_final = necesidad if necesidad > 0 else 0.001 
+                    # Si el stock actual es menor al objetivo, pedimos la diferencia
+                    necesidad = target_stock - soh_tienda
+                    peso_final = max(necesidad, 0.001) # Mínimo un valor pequeño si hay venta
                 else:
-                    # LÓGICA NEWNESS: Usamos el peso A,B,C,D
                     peso_final = peso_base
 
                 # Filtros de exclusión (Top Tier y Clima)
@@ -377,7 +378,7 @@ if st.session_state.datos_cargados:
             limite_maximo_permitido = max_send_pct + flex_margin
             
             # Si el % sobrepasa la regla configurada en el panel izquierdo...
-            if pct_global > limite_maximo_permitido:
+            if round(pct_global, 1) > round(limite_maximo_permitido, 1):
                 if idioma == "Español":
                     st.warning(f"⚠️ **Límite Excedido:** Tus ajustes manuales han elevado la asignación global al **{pct_global:.1f}%**, superando la regla máxima permitida (**{limite_maximo_permitido}%**).")
                     btn_text = "🔄 Restaurar Regla Matemática (Borrar Cambios Manuales)"
