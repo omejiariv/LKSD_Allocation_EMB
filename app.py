@@ -1,3 +1,5 @@
+# app.py
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -65,8 +67,11 @@ t = {
         "matrix_title": "📋 Matriz de Asignación Final",
         "download_btn": "📥 Descargar Matriz (Excel)",
         "error_msg": "❌ Ocurrió un error en el cálculo: ",
-        "error_msg": "❌ Ocurrió un error en el cálculo: ", # <--- Asegúrate de que esta coma esté aquí
-        
+        "error_msg": "❌ Ocurrió un error en el cálculo: ",
+        "target_woc_title": "4. Objetivo de Inventario",
+        "target_woc_slider": "Semanas de Cobertura (Target WOC)",
+        "tt_woc": "Define cuántas semanas de venta quieres cubrir en la tienda. Ejemplo: 4 semanas significa que la tienda siempre tendrá stock para vender un mes.",
+        "risk_alert": "⚠️ ALERTA DE QUIEBRE",
         "doc_title": "📚 Documentación, Metodología e Insumos",
         "doc_content": """
         ### 📌 Resumen de la App
@@ -117,7 +122,11 @@ t = {
         "matrix_title": "📋 Final Allocation Matrix",
         "download_btn": "📥 Download Matrix (Excel)",
         "error_msg": "❌ An error occurred during calculation: ",
-        "error_msg": "❌ An error occurred during calculation: ", # <--- Asegúrate de que esta coma esté aquí
+        "error_msg": "❌ An error occurred during calculation: ",
+        "target_woc_title": "4. Inventory Target",
+        "target_woc_slider": "Target Weeks of Cover (WOC)",
+        "tt_woc": "Defines how many weeks of sales you want to cover in-store. Example: 4 weeks means the store will always have stock for one month of sales.",
+        "risk_alert": "⚠️ STOCKOUT RISK",
         
         # --- AÑADIR DESDE AQUÍ ---
         "doc_title": "📚 Documentation, Methodology & Inputs",
@@ -169,6 +178,10 @@ peso_d = st.sidebar.number_input(txt["weight_d"], value=10)
 total_peso = max(peso_a + peso_b + peso_c + peso_d, 1)
 dict_pesos = {'A': peso_a / total_peso, 'B': peso_b / total_peso, 'C': peso_c / total_peso, 'D': peso_d / total_peso}
 
+# --- NUEVO CONTROL: REPOSICIÓN (PULL) ---
+st.sidebar.subheader(txt["target_woc_title"])
+target_woc = st.sidebar.slider(txt["target_woc_slider"], min_value=1, max_value=8, value=4, help=txt["tt_woc"])
+
 
 # --- ACCESO ADMINISTRADOR Y CARGA DE ARCHIVO ---
 with st.expander(txt["admin_title"], expanded=not st.session_state.datos_cargados):
@@ -195,6 +208,14 @@ with st.expander(txt["admin_title"], expanded=not st.session_state.datos_cargado
                     df_curve = pd.read_excel(uploaded_file, sheet_name='Size_Curve', engine='openpyxl')
                     df_curve.columns = df_curve.columns.astype(str).str.strip()
 
+                    # Intentamos leer la nueva hoja (por si usan un formato viejo que no la tenga, no dará error)
+                    try:
+                        df_metrics = pd.read_excel(uploaded_file, sheet_name='Store_Metrics', engine='openpyxl')
+                        df_metrics.columns = df_metrics.columns.astype(str).str.strip()
+                        st.session_state.df_metrics = df_metrics
+                    except:
+                        st.session_state.df_metrics = None
+
                     # Guardar en memoria RAM de Streamlit
                     st.session_state.df_newness = df_newness
                     st.session_state.df_stores = df_stores
@@ -206,7 +227,6 @@ with st.expander(txt["admin_title"], expanded=not st.session_state.datos_cargado
                     
                     st.toast(txt["success_msg"], icon="✅")
 
-
 # --- MOTOR MATEMÁTICO Y DASHBOARD (EJECUTADO DESDE LA MEMORIA) ---
 if st.session_state.datos_cargados:
     try:
@@ -215,7 +235,16 @@ if st.session_state.datos_cargados:
         df_stores = st.session_state.df_stores.copy()
         df_curve = st.session_state.df_curve.copy()
 
-        store_grades = pd.Series(df_stores['Womens_Allocation_Grade'].values, index=df_stores['Store']).to_dict()
+        # Recuperamos las métricas de la memoria (si existen)
+        if st.session_state.df_metrics is not None:
+            df_metrics = st.session_state.df_metrics.copy()
+            df_metrics['Key'] = df_metrics['SKU'].astype(str) + "_" + df_metrics['Store'].astype(str)
+            metrics_dict = df_metrics.set_index('Key').to_dict('index')
+        else:
+            metrics_dict = {}
+
+        # Mapeos base
+        store_grades = pd.Series(df_stores['Womens Allocation Grade'].values, index=df_stores['Store']).to_dict()
         store_climates = pd.Series(df_stores['Climate'].astype(str).str.lower().str.strip().values, index=df_stores['Store']).to_dict()
         tiendas_destino = df_stores['Store'].dropna().tolist()
 
@@ -239,24 +268,43 @@ if st.session_state.datos_cargados:
         limite_absoluto = (max_send_pct + flex_margin) / 100.0
         df_resultado['Max_Allocable'] = np.clip(df_resultado['LSKD_DC_SOH'] * limite_absoluto * df_resultado['Norm_Curve'], 0, df_resultado['LSKD_DC_SOH'])
 
+        # Matriz de Pesos Inteligente (Basada en Ventas)
         df_pesos = pd.DataFrame(index=df_resultado.index, columns=tiendas_destino)
 
         for tienda in tiendas_destino:
             grade_tienda = store_grades.get(tienda, 'C')
-            peso_tienda = dict_pesos.get(grade_tienda, 0)
+            peso_base = dict_pesos.get(grade_tienda, 0)
             clima_tienda = store_climates.get(tienda, '')
 
-            peso_actual = pd.Series(peso_tienda, index=df_resultado.index)
+            pesos_tienda = []
 
-            mask_toptier = (df_resultado['Grade'] == 'TOP TIER') & (grade_tienda in ['C', 'D'])
-            peso_actual = np.where(mask_toptier, 0, peso_actual)
+            for idx, row in df_resultado.iterrows():
+                key = f"{row['SKU']}_{tienda}"
+                metricas = metrics_dict.get(key, {})
+                
+                ventas = metricas.get('Sales_L4W', 0)
+                soh_tienda = metricas.get('Store_SOH', 0)
+                
+                if ventas > 0:
+                    # LÓGICA REPOSICIÓN: Necesidad = (Venta Semanal * WOC) - Stock Actual
+                    venta_semanal = ventas / 4
+                    target_stock = venta_semanal * target_woc
+                    necesidad = max(target_stock - soh_tienda, 0)
+                    peso_final = necesidad if necesidad > 0 else 0.001 
+                else:
+                    # LÓGICA NEWNESS: Usamos el peso A,B,C,D
+                    peso_final = peso_base
 
-            if temporada_backend != "ambos":
-                mask_climate = (df_resultado['Grade'] == 'CLIMATE SPECIFIC') & (clima_tienda != temporada_backend)
-                peso_actual = np.where(mask_climate, 0, peso_actual)
+                # Filtros de exclusión (Top Tier y Clima)
+                if (row['Grade'] == 'TOP TIER' and grade_tienda in ['C', 'D']) or \
+                   (temporada_backend != "ambos" and row['Grade'] == 'CLIMATE SPECIFIC' and clima_tienda != temporada_backend):
+                    peso_final = 0
 
-            df_pesos[tienda] = peso_actual
+                pesos_tienda.append(peso_final)
+            
+            df_pesos[tienda] = pesos_tienda
 
+        # 3. Reparto con Método del Resto Mayor
         for idx in df_resultado.index:
             max_units = int(np.round(df_resultado.loc[idx, 'Max_Allocable']))
             pesos_row = df_pesos.loc[idx, tiendas_destino].values.astype(float)
@@ -275,9 +323,8 @@ if st.session_state.datos_cargados:
                 indices = np.argsort(fractions)[-remainder:]
                 for i in indices:
                     alloc[i] += 1
-
             df_resultado.loc[idx, tiendas_destino] = alloc
-
+            
         # --- SECCIÓN VISUAL ---
         st.markdown("---")
         
