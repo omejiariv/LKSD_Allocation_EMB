@@ -284,70 +284,22 @@ if st.session_state.datos_cargados:
         # 1. Título con Fecha Dinámica
         fecha_mostrar = st.session_state.fecha_es if idioma == "Español" else st.session_state.fecha_en
         st.subheader(f"{txt['metrics_title']} ({fecha_mostrar})")
+
+        # 2. TRUCO DE MAGIA: Creamos "Contenedores vacíos" en el orden que queremos mostrarlos
+        cont_metricas = st.container()
+        cont_graficos = st.container()
         
-        total_inventario = df_resultado['LSKD_DC_SOH'].sum()
-        df_solo_tiendas = df_resultado[tiendas_destino]
-        total_asignado = df_solo_tiendas.sum().sum()
-        
-        col1, col2, col3 = st.columns(3)
-        col1.metric(txt["metric_inv"], f"{int(total_inventario):,}")
-        col2.metric(txt["metric_dist"], f"{int(total_asignado):,}")
-        pct_global = (total_asignado / total_inventario * 100) if total_inventario > 0 else 0
-        col3.metric(txt["metric_pct"], f"{pct_global:.1f}%")
-
-        # Layout en 2 columnas para los gráficos
-        graf_col1, graf_col2 = st.columns(2)
-
-        # Gráfico 1: Por Tienda
-        with graf_col1:
-            st.markdown(txt["chart_title_store"])
-            asignacion_por_tienda = df_solo_tiendas.sum().reset_index()
-            asignacion_por_tienda.columns = ['Tienda', 'Unidades']
-            asignacion_por_tienda = asignacion_por_tienda.sort_values(by='Unidades', ascending=False)
-            
-            fig_store = px.bar(
-                asignacion_por_tienda, x='Tienda', y='Unidades',
-                color='Unidades', color_continuous_scale='Blues', text_auto=True
-            )
-            fig_store.update_layout(xaxis_tickangle=-45, showlegend=False, margin=dict(t=10, b=10))
-            st.plotly_chart(fig_store, use_container_width=True)
-
-        # Gráfico 2: Por Talla (Interactivo)
-        with graf_col2:
-            st.markdown(txt["chart_title_size"])
-            df_resultado['Total_Asignado'] = df_solo_tiendas.sum(axis=1)
-            df_tallas = df_resultado.groupby('Size')['Total_Asignado'].sum().reset_index()
-            
-            # Filtro Multiselect para las tallas
-            tallas_disponibles = df_tallas['Size'].unique().tolist()
-            tallas_seleccionadas = st.multiselect(txt["size_filter"], tallas_disponibles, default=tallas_disponibles)
-            
-            df_tallas_filt = df_tallas[df_tallas['Size'].isin(tallas_seleccionadas)]
-            
-            fig_size = px.bar(
-                df_tallas_filt, x='Size', y='Total_Asignado',
-                color='Total_Asignado', color_continuous_scale='Teal', text_auto=True
-            )
-            fig_size.update_layout(margin=dict(t=10, b=10))
-            st.plotly_chart(fig_size, use_container_width=True)
-            
-            # Limpiamos la columna auxiliar
-            df_resultado = df_resultado.drop(columns=['Total_Asignado'])
-
-        # --- MATRIZ Y DESCARGA EXCEL ---
+        # 3. Mostramos y ejecutamos la Matriz Editable PRIMERO (para capturar los cambios)
         st.markdown("---")
         st.subheader(txt["matrix_title"])
-
-        # 1. Mensaje de instrucción dinámica según el idioma
+        
         if idioma == "Español":
-            st.info("💡 **Ajuste Fino:** Haz doble clic en cualquier celda debajo del nombre de una tienda para modificar la cantidad manualmente. Los cambios se incluirán automáticamente en tu descarga.")
+            st.info("💡 **Ajuste Fino:** Haz doble clic en cualquier celda debajo del nombre de una tienda para modificar la cantidad manualmente. Los gráficos y métricas se actualizarán al instante.")
         else:
-            st.info("💡 **Fine-tuning:** Double-click any cell under a store name to manually modify the quantity. Changes will be included in your download automatically.")
+            st.info("💡 **Fine-tuning:** Double-click any cell under a store name to manually modify the quantity. Charts and metrics will update instantly.")
 
-        # 2. Protegemos las columnas base para que el usuario no pueda romper los SKUs o la información del producto
         columnas_protegidas = ['SKU', 'Product_Name', 'Size', 'Gender', 'Gender_&_Category', 'LSKD_DC_SOH', 'Grade', 'Curve_Multiplier', 'Norm_Curve', 'Max_Allocable']
         
-        # 3. st.data_editor reemplaza a st.dataframe y captura los cambios del usuario
         df_editado = st.data_editor(
             df_resultado,
             disabled=columnas_protegidas,
@@ -355,7 +307,55 @@ if st.session_state.datos_cargados:
             hide_index=True
         )
 
-        # 4. Generamos el Excel utilizando el DataFrame EDITADO, no el original
+        # 4. Inyectamos las Métricas en el contenedor de arriba usando df_editado
+        with cont_metricas:
+            total_inventario = df_editado['LSKD_DC_SOH'].sum()
+            df_solo_tiendas = df_editado[tiendas_destino]
+            total_asignado = df_solo_tiendas.sum().sum()
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric(txt["metric_inv"], f"{int(total_inventario):,}")
+            col2.metric(txt["metric_dist"], f"{int(total_asignado):,}")
+            pct_global = (total_asignado / total_inventario * 100) if total_inventario > 0 else 0
+            col3.metric(txt["metric_pct"], f"{pct_global:.1f}%")
+
+        # 5. Inyectamos los Gráficos en el contenedor de arriba usando df_editado
+        with cont_graficos:
+            graf_col1, graf_col2 = st.columns(2)
+
+            with graf_col1:
+                st.markdown(txt["chart_title_store"])
+                asignacion_por_tienda = df_solo_tiendas.sum().reset_index()
+                asignacion_por_tienda.columns = ['Tienda', 'Unidades']
+                asignacion_por_tienda = asignacion_por_tienda.sort_values(by='Unidades', ascending=False)
+                
+                fig_store = px.bar(
+                    asignacion_por_tienda, x='Tienda', y='Unidades',
+                    color='Unidades', color_continuous_scale='Blues', text_auto=True
+                )
+                fig_store.update_layout(xaxis_tickangle=-45, showlegend=False, margin=dict(t=10, b=10))
+                st.plotly_chart(fig_store, use_container_width=True)
+
+            with graf_col2:
+                st.markdown(txt["chart_title_size"])
+                # Calculamos el total por talla sumando solo las columnas de las tiendas en df_editado
+                df_editado_tallas = df_editado.copy()
+                df_editado_tallas['Total_Asignado'] = df_solo_tiendas.sum(axis=1)
+                df_tallas = df_editado_tallas.groupby('Size')['Total_Asignado'].sum().reset_index()
+                
+                tallas_disponibles = df_tallas['Size'].unique().tolist()
+                tallas_seleccionadas = st.multiselect(txt["size_filter"], tallas_disponibles, default=tallas_disponibles)
+                
+                df_tallas_filt = df_tallas[df_tallas['Size'].isin(tallas_seleccionadas)]
+                
+                fig_size = px.bar(
+                    df_tallas_filt, x='Size', y='Total_Asignado',
+                    color='Total_Asignado', color_continuous_scale='Teal', text_auto=True
+                )
+                fig_size.update_layout(margin=dict(t=10, b=10))
+                st.plotly_chart(fig_size, use_container_width=True)
+
+        # 6. Botón de descarga al final de la página
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df_editado.to_excel(writer, index=False, sheet_name='Asignacion_Semanal')
