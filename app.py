@@ -441,6 +441,7 @@ if st.session_state.datos_cargados:
                 st.plotly_chart(fig_size, use_container_width=True)
 
         # 8. Descarga de Excel
+# 8. Descarga de Excel de la semana actual
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df_editado.to_excel(writer, index=False, sheet_name='Asignacion_Semanal')
@@ -453,33 +454,53 @@ if st.session_state.datos_cargados:
             mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
 
-    except Exception as e:
-        st.error(f"{txt['error_msg']}{e}")
-
+        # --- SECCIÓN DE REGISTRO HISTÓRICO (CORREGIDA) ---
         st.markdown("---")
         st.subheader("💾 Registro Histórico")
         
+        # Botón 1: Guardar la tabla actual en la base de datos acumulada
         if st.button("Guardar esta asignación en el Historial"):
             try:
-                # 1. Preparar datos para el historial
+                # Preparar datos
                 df_hist = df_editado.copy()
                 df_hist['Fecha_Procesado'] = st.session_state.fecha_es
                 df_hist['Target_WOC_Usado'] = target_woc
                 
-                # 2. Intentar cargar historial existente o crear uno nuevo
                 nombre_archivo = "historico_asignaciones_lskd.csv"
+                
+                # Intentar leer el histórico y concatenar
                 try:
                     df_existente = pd.read_csv(nombre_archivo)
                     df_final_hist = pd.concat([df_existente, df_hist], ignore_index=True)
                 except FileNotFoundError:
+                    # Si no existe, este es el primer registro
                     df_final_hist = df_hist
                 
-                # 3. Guardar
+                # Guardar el CSV en el servidor
                 df_final_hist.to_csv(nombre_archivo, index=False)
-                st.success(f"✅ ¡Datos integrados al historial con éxito! (Archivo: {nombre_archivo})")
+                st.success(f"✅ ¡Datos integrados al historial con éxito! Ya puedes descargarlo.")
+                
             except Exception as e:
                 st.error(f"No se pudo guardar el historial: {e}")
-        
+
+        # Botón 2: Descargar el archivo acumulado completo
+        try:
+            import os
+            if os.path.exists("historico_asignaciones_lskd.csv"):
+                with open("historico_asignaciones_lskd.csv", "rb") as file:
+                    st.download_button(
+                        label="📥 Descargar Base de Datos Histórica (CSV)",
+                        data=file,
+                        file_name="historico_asignaciones_lskd.csv",
+                        mime="text/csv",
+                    )
+        except Exception as e:
+            pass
+
+    except Exception as e:
+        # Este es el cierre correcto del try-except principal del motor
+        st.error(f"{txt['error_msg']}{e}")
+
 # --- FOOTER ---
 st.divider()
-st.caption("© 2026 Elomejia LSKD | Elo-cations v1.0 | Newness")
+st.caption("© 2026 EloMejiaB LSKD | Elo-cations v1.0 | Newness & Replenishment")
