@@ -20,9 +20,9 @@ if 'datos_cargados' not in st.session_state:
     st.session_state.fecha_es = None
     st.session_state.fecha_en = None
     st.session_state.last_file_id = None
-    st.session_state.editor_key = 0  # Llave maestra del editor
+    st.session_state.editor_key = 0 # Llave maestra
 
-# Función que resetea la tabla visual al mover un slider
+# Función para limpiar la tabla cuando muevas un slider
 def reset_editor():
     st.session_state.editor_key += 1
 
@@ -186,7 +186,7 @@ dict_pesos = {'A': peso_a / total_peso, 'B': peso_b / total_peso, 'C': peso_c / 
 
 # --- NUEVO CONTROL: REPOSICIÓN (PULL) ---
 st.sidebar.subheader(txt["target_woc_title"])
-target_woc = st.sidebar.slider(txt["target_woc_slider"], min_value=1, max_value=8, value=4, help=txt["tt_woc"], on_change=reset_editor)
+target_woc = st.sidebar.slider(txt["target_woc_slider"], 1, 8, 4, help=txt["tt_woc"], on_change=reset_editor)
 
 
 # --- ACCESO ADMINISTRADOR Y CARGA DE ARCHIVO ---
@@ -241,10 +241,11 @@ if st.session_state.datos_cargados:
         df_stores = st.session_state.df_stores.copy()
         df_curve = st.session_state.df_curve.copy()
 
-        # Recuperamos las métricas de la memoria (Limpiando espacios invisibles)
+        # Recuperamos las métricas con limpieza extrema
         if st.session_state.df_metrics is not None:
             df_metrics = st.session_state.df_metrics.copy()
-            df_metrics['Key'] = df_metrics['SKU'].astype(str).str.strip() + "_" + df_metrics['Store'].astype(str).str.strip()
+            # Forzamos Mayúsculas y quitamos espacios para asegurar el cruce
+            df_metrics['Key'] = df_metrics['SKU'].astype(str).str.upper().str.strip() + "_" + df_metrics['Store'].astype(str).str.upper().str.strip()
             metrics_dict = df_metrics.set_index('Key').to_dict('index')
         else:
             metrics_dict = {}
@@ -278,7 +279,7 @@ if st.session_state.datos_cargados:
         limite_absoluto = (max_send_pct + flex_margin) / 100.0
 
         for idx, row in df_resultado.iterrows():
-            sku = str(row['SKU']).strip()
+            sku_limpio = str(row['SKU']).upper().strip()
             soh_bodega = row['LSKD_DC_SOH']
             
             suma_necesidades = 0
@@ -286,12 +287,8 @@ if st.session_state.datos_cargados:
             es_reposicion = False
 
             for tienda in tiendas_destino:
-                t = str(tienda).strip()
-                grade_tienda = store_grades.get(t, 'C')
-                peso_base = dict_pesos.get(grade_tienda, 0)
-                clima_tienda = store_climates.get(t, '')
-
-                key = f"{sku}_{t}"
+                t_limpia = str(tienda).upper().strip()
+                key = f"{sku_limpio}_{t_limpia}"
                 metricas = metrics_dict.get(key, {})
                 
                 ventas = metricas.get('Sales_L4W', 0)
@@ -299,38 +296,27 @@ if st.session_state.datos_cargados:
                 
                 if ventas > 0:
                     es_reposicion = True
-                    # LÓGICA REPOSICIÓN (PULL)
-                    venta_semanal = ventas / 4
-                    target_stock = venta_semanal * target_woc
+                    # Venta Semanal * Target WOC - Inventario en tienda
+                    target_stock = (ventas / 4) * target_woc
                     necesidad = target_stock - soh_tienda
-                    peso_final = max(necesidad, 0.001) 
-                    
-                    if necesidad > 0:
-                        suma_necesidades += necesidad
+                    peso_final = max(necesidad, 0.001)
+                    if necesidad > 0: suma_necesidades += necesidad
                 else:
-                    # LÓGICA NEWNESS (PUSH)
-                    peso_final = peso_base
-
-                # Filtros de exclusión
-                if (row['Grade'] == 'TOP TIER' and grade_tienda in ['C', 'D']) or \
-                   (temporada_backend != "ambos" and row['Grade'] == 'CLIMATE SPECIFIC' and clima_tienda != temporada_backend):
-                    peso_final = 0
+                    peso_final = dict_pesos.get(store_grades.get(tienda, 'C'), 0)
 
                 pesos_fila.append(peso_final)
             
             df_pesos.loc[idx] = pesos_fila
 
-            # 3. MAGIA HÍBRIDA: ¿Push o Pull?
             if es_reposicion:
-                # PULL: Ignoramos el slider del 30%. Mandamos la necesidad real de las tiendas.
+                # Si es reposición, la "sed" de la tienda manda, pero no más de lo que hay en bodega
                 max_unidades = min(suma_necesidades, soh_bodega)
             else:
-                # PUSH: Usamos la regla del slider (ej. 30%)
-                max_unidades = soh_bodega * limite_absoluto * row['Norm_Curve']
-                
-            # Cuidamos no enviar más de lo que hay en bodega ni números negativos
+                # Si es nuevo, manda la regla del 33%
+                max_unidades = soh_bodega * ((max_send_pct + flex_margin) / 100) * row['Norm_Curve']
+            
             allocable_real.append(max(0, min(max_unidades, soh_bodega)))
-
+    
         df_resultado['Max_Allocable'] = allocable_real
 
         # 4. Reparto con Método del Resto Mayor
@@ -469,6 +455,30 @@ if st.session_state.datos_cargados:
 
     except Exception as e:
         st.error(f"{txt['error_msg']}{e}")
+
+        st.markdown("---")
+        st.subheader("💾 Registro Histórico")
+        
+        if st.button("Guardar esta asignación en el Historial"):
+            try:
+                # 1. Preparar datos para el historial
+                df_hist = df_editado.copy()
+                df_hist['Fecha_Procesado'] = st.session_state.fecha_es
+                df_hist['Target_WOC_Usado'] = target_woc
+                
+                # 2. Intentar cargar historial existente o crear uno nuevo
+                nombre_archivo = "historico_asignaciones_lskd.csv"
+                try:
+                    df_existente = pd.read_csv(nombre_archivo)
+                    df_final_hist = pd.concat([df_existente, df_hist], ignore_index=True)
+                except FileNotFoundError:
+                    df_final_hist = df_hist
+                
+                # 3. Guardar
+                df_final_hist.to_csv(nombre_archivo, index=False)
+                st.success(f"✅ ¡Datos integrados al historial con éxito! (Archivo: {nombre_archivo})")
+            except Exception as e:
+                st.error(f"No se pudo guardar el historial: {e}")
         
 # --- FOOTER ---
 st.divider()
