@@ -337,17 +337,34 @@ if st.session_state.datos_cargados:
         # --- MATRIZ Y DESCARGA EXCEL ---
         st.markdown("---")
         st.subheader(txt["matrix_title"])
-        st.dataframe(df_resultado)
 
+        # 1. Mensaje de instrucción dinámica según el idioma
+        if idioma == "Español":
+            st.info("💡 **Ajuste Fino:** Haz doble clic en cualquier celda debajo del nombre de una tienda para modificar la cantidad manualmente. Los cambios se incluirán automáticamente en tu descarga.")
+        else:
+            st.info("💡 **Fine-tuning:** Double-click any cell under a store name to manually modify the quantity. Changes will be included in your download automatically.")
+
+        # 2. Protegemos las columnas base para que el usuario no pueda romper los SKUs o la información del producto
+        columnas_protegidas = ['SKU', 'Product_Name', 'Size', 'Gender', 'Gender_&_Category', 'LSKD_DC_SOH', 'Grade', 'Curve_Multiplier', 'Norm_Curve', 'Max_Allocable']
+        
+        # 3. st.data_editor reemplaza a st.dataframe y captura los cambios del usuario
+        df_editado = st.data_editor(
+            df_resultado,
+            disabled=columnas_protegidas,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # 4. Generamos el Excel utilizando el DataFrame EDITADO, no el original
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            df_resultado.to_excel(writer, index=False, sheet_name='Asignacion_Semanal')
+            df_editado.to_excel(writer, index=False, sheet_name='Asignacion_Semanal')
         excel_data = buffer.getvalue()
 
         st.download_button(
             label=txt["download_btn"],
             data=excel_data,
-            file_name='Asignacion_LSKD_Inteligente.xlsx',
+            file_name='Asignacion_LSKD_Ajustada.xlsx',
             mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
 
