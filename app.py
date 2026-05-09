@@ -216,12 +216,22 @@ with st.expander(txt["admin_title"], expanded=not st.session_state.datos_cargado
                     try:
                         df_soh_sheet = pd.read_excel(uploaded_file, sheet_name='SOH', engine='openpyxl')
                         df_soh_sheet.columns = df_soh_sheet.columns.astype(str).str.strip()
-                        # Detecta la columna de cantidad dinámicamente
-                        col_soh = [c for c in df_soh_sheet.columns if 'SOH' in c.upper()][0] 
-                        soh_map = pd.Series(df_soh_sheet[col_soh].values, index=df_soh_sheet['SKU'].astype(str).str.upper().str.strip()).to_dict()
+                        
+                        # AQUÍ ESTÁ LA MAGIA: Usamos tus nombres exactos
+                        nombre_columna_sku = 'SKU' 
+                        nombre_columna_cantidad = 'LSKD_DC'
+                        
+                        # Creamos el mapa cruzando el SKU con el inventario de LSKD_DC
+                        soh_map = pd.Series(
+                            df_soh_sheet[nombre_columna_cantidad].values, 
+                            index=df_soh_sheet[nombre_columna_sku].astype(str).str.upper().str.strip()
+                        ).to_dict()
+                        
+                        # Actualizamos la bodega principal
                         df_newness['LSKD_DC_SOH'] = df_newness['SKU'].astype(str).str.upper().str.strip().map(soh_map).fillna(df_newness['LSKD_DC_SOH'])
+                        
                     except Exception as e:
-                        st.warning(f"⚠️ No se encontró la hoja 'SOH' o hubo un error. Usando inventario base de Newness. ({e})")
+                        st.warning(f"⚠️ No se pudo procesar la hoja 'SOH'. Usando inventario base de Newness. Detalle: {e}")
 
                     # 3. Leer Hoja Store_Metrics
                     try:
