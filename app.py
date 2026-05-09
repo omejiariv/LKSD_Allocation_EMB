@@ -424,24 +424,45 @@ if st.session_state.datos_cargados:
 
             with graf_col2:
                 st.markdown(txt["chart_title_size"])
+                
+                # Consolidación de datos
                 df_editado_tallas = df_editado.copy()
                 df_editado_tallas['Total_Asignado'] = df_solo_tiendas.sum(axis=1)
                 df_tallas = df_editado_tallas.groupby('Size')['Total_Asignado'].sum().reset_index()
                 
+                # Selector de tallas
                 tallas_disponibles = df_tallas['Size'].unique().tolist()
                 tallas_seleccionadas = st.multiselect(txt["size_filter"], tallas_disponibles, default=tallas_disponibles)
-                
                 df_tallas_filt = df_tallas[df_tallas['Size'].isin(tallas_seleccionadas)]
                 
+                # NUEVO: Selector de orden robusto
+                opciones_orden = ["Mayor a Menor", "Menor a Mayor", "Orden Natural (Tallas)"]
+                orden = st.radio("Ordenar barras por:", opciones_orden, horizontal=True, key="orden_tallas_radio")
+                
+                # Lógica matemática de ordenamiento
+                if orden == "Mayor a Menor":
+                    df_tallas_filt = df_tallas_filt.sort_values(by='Total_Asignado', ascending=False)
+                elif orden == "Menor a Mayor":
+                    df_tallas_filt = df_tallas_filt.sort_values(by='Total_Asignado', ascending=True)
+                else:
+                    # Orden natural del Retail
+                    orden_tallas_retail = ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', 'ONE SIZE']
+                    df_tallas_filt['Size'] = pd.Categorical(df_tallas_filt['Size'], categories=orden_tallas_retail, ordered=True)
+                    df_tallas_filt = df_tallas_filt.sort_values('Size')
+                
+                # Dibujado del gráfico
                 fig_size = px.bar(
                     df_tallas_filt, x='Size', y='Total_Asignado',
                     color='Total_Asignado', color_continuous_scale='Teal', text_auto=True
                 )
+                
+                # TRUCO VITAL: Obligar a Plotly a respetar estrictamente el orden del DataFrame
+                fig_size.update_xaxes(categoryorder='array', categoryarray=df_tallas_filt['Size'].astype(str))
                 fig_size.update_layout(margin=dict(t=10, b=10))
+                
                 st.plotly_chart(fig_size, use_container_width=True)
 
-        # 8. Descarga de Excel
-# 8. Descarga de Excel de la semana actual
+        # 8. Descarga de Excel de la semana actual
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df_editado.to_excel(writer, index=False, sheet_name='Asignacion_Semanal')
