@@ -284,46 +284,67 @@ if st.session_state.datos_cargados:
         # 2. Matriz de Pesos Inteligente y Asignación Máxima Dinámica
         df_pesos = pd.DataFrame(index=df_resultado.index, columns=tiendas_destino)
         allocable_real = []
-        limite_absoluto = (max_send_pct + flex_margin) / 100.0
 
         for idx, row in df_resultado.iterrows():
             sku_limpio = str(row['SKU']).upper().strip()
-            soh_bodega = row['LSKD_DC_SOH']
             
-            suma_necesidades = 0
+            # Forzamos conversión a decimales (floats) para evitar que Python los vuelva CERO
+            soh_bodega = float(row['LSKD_DC_SOH'])
+            norm_curve = float(row['Norm_Curve'])
+            
+            suma_necesidades = 0.0
             pesos_fila = []
             es_reposicion = False
 
             for tienda in tiendas_destino:
                 t_limpia = str(tienda).upper().strip()
+                grade_tienda = store_grades.get(tienda, 'C')
+                clima_tienda = store_climates.get(tienda, '')
+
                 key = f"{sku_limpio}_{t_limpia}"
                 metricas = metrics_dict.get(key, {})
                 
-                ventas = metricas.get('Sales_L4W', 0)
-                soh_tienda = metricas.get('Store_SOH', 0)
+                # Extracción segura de datos de la tienda
+                try:
+                    ventas = float(metricas.get('Sales_L4W', 0))
+                except:
+                    ventas = 0.0
+                    
+                try:
+                    soh_tienda = float(metricas.get('Store_SOH', 0))
+                except:
+                    soh_tienda = 0.0
                 
                 if ventas > 0:
                     es_reposicion = True
-                    # Venta Semanal * Target WOC - Inventario en tienda
-                    target_stock = (ventas / 4) * target_woc
+                    # Lógica PULL: Necesidad = Target - SOH Actual
+                    target_stock = (ventas / 4.0) * float(target_woc)
                     necesidad = target_stock - soh_tienda
                     peso_final = max(necesidad, 0.001)
-                    if necesidad > 0: suma_necesidades += necesidad
+                    if necesidad > 0: 
+                        suma_necesidades += necesidad
                 else:
-                    peso_final = dict_pesos.get(store_grades.get(tienda, 'C'), 0)
+                    # Lógica PUSH: Peso según el grado (A, B, C, D)
+                    peso_final = float(dict_pesos.get(grade_tienda, 0))
+
+                # REINTEGRAMOS LOS FILTROS INTELIGENTES (Top Tier y Clima)
+                if (row['Grade'] == 'TOP TIER' and grade_tienda in ['C', 'D']) or \
+                   (temporada_backend != "ambos" and row['Grade'] == 'CLIMATE SPECIFIC' and clima_tienda != temporada_backend):
+                    peso_final = 0.0
 
                 pesos_fila.append(peso_final)
             
             df_pesos.loc[idx] = pesos_fila
 
+            # MAGIA HÍBRIDA BLINDADA
             if es_reposicion:
-                # Si es reposición, la "sed" de la tienda manda, pero no más de lo que hay en bodega
                 max_unidades = min(suma_necesidades, soh_bodega)
             else:
-                # Si es nuevo, manda la regla del 33%
-                max_unidades = soh_bodega * ((max_send_pct + flex_margin) / 100) * row['Norm_Curve']
+                limite_decimal = (float(max_send_pct) + float(flex_margin)) / 100.0
+                max_unidades = soh_bodega * limite_decimal * norm_curve
             
-            allocable_real.append(max(0, min(max_unidades, soh_bodega)))
+            # Aseguramos que la asignación no sea negativa ni mayor a la bodega
+            allocable_real.append(max(0.0, min(max_unidades, soh_bodega)))
     
         df_resultado['Max_Allocable'] = allocable_real
 
