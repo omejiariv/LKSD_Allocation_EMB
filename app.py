@@ -203,18 +203,26 @@ with st.expander(txt["admin_title"], expanded=not st.session_state.datos_cargado
             # Solo procesamos si es un archivo nuevo, sino usamos la memoria
             if st.session_state.last_file_id != current_file_id:
                 with st.spinner(txt["processing"]):
+                    # 1. Leer hojas base
                     df_newness = pd.read_excel(uploaded_file, sheet_name='Newness', engine='openpyxl')
-                    df_newness = df_newness.dropna(how='all', axis=0)
                     df_newness.columns = df_newness.columns.astype(str).str.strip().str.replace(' ', '_')
                     
                     df_stores = pd.read_excel(uploaded_file, sheet_name='Store_Grading', engine='openpyxl')
-                    df_stores = df_stores.dropna(how='all', axis=0)
                     df_stores.columns = df_stores.columns.astype(str).str.strip()
                     
                     df_curve = pd.read_excel(uploaded_file, sheet_name='Size_Curve', engine='openpyxl')
                     df_curve.columns = df_curve.columns.astype(str).str.strip()
 
-                    # Intentamos leer la nueva hoja (por si usan un formato viejo que no la tenga, no dará error)
+                    # 2. Leer Hoja SOH (Actualiza el inventario en tiempo real)
+                    try:
+                        df_soh_sheet = pd.read_excel(uploaded_file, sheet_name='SOH', engine='openpyxl')
+                        df_soh_sheet.columns = df_soh_sheet.columns.astype(str).str.strip()
+                        soh_map = pd.Series(df_soh_sheet['SOH_Quantity'].values, index=df_soh_sheet['SKU'].astype(str).str.upper().str.strip()).to_dict()
+                        df_newness['LSKD_DC_SOH'] = df_newness['SKU'].astype(str).str.upper().str.strip().map(soh_map).fillna(df_newness['LSKD_DC_SOH'])
+                    except:
+                        pass # Si no existe la hoja SOH, no hace nada y usa el dato de Newness
+
+                    # 3. Leer Hoja Store_Metrics
                     try:
                         df_metrics = pd.read_excel(uploaded_file, sheet_name='Store_Metrics', engine='openpyxl')
                         df_metrics.columns = df_metrics.columns.astype(str).str.strip()
@@ -222,7 +230,7 @@ with st.expander(txt["admin_title"], expanded=not st.session_state.datos_cargado
                     except:
                         st.session_state.df_metrics = None
 
-                    # Guardar en memoria RAM de Streamlit
+                    # Guardar en memoria
                     st.session_state.df_newness = df_newness
                     st.session_state.df_stores = df_stores
                     st.session_state.df_curve = df_curve
@@ -343,13 +351,11 @@ if st.session_state.datos_cargados:
         # --- SECCIÓN VISUAL ---
         st.markdown("---")
         
-        # 1. Título con Fecha Dinámica
         fecha_mostrar = st.session_state.fecha_es if idioma == "Español" else st.session_state.fecha_en
         st.subheader(f"{txt['metrics_title']} ({fecha_mostrar})")
 
-        # 2. Creamos los contenedores vacíos (ahora incluimos uno para alertas)
         cont_metricas = st.container()
-        cont_alertas = st.container()  # <--- NUEVO
+        cont_alertas = st.container()
         cont_graficos = st.container()
         
         st.markdown("---")
@@ -362,11 +368,9 @@ if st.session_state.datos_cargados:
 
         columnas_protegidas = ['SKU', 'Product_Name', 'Size', 'Gender', 'Gender_&_Category', 'LSKD_DC_SOH', 'Grade', 'Curve_Multiplier', 'Norm_Curve', 'Max_Allocable']
         
-        # 3. Inicializamos una "llave" para el editor en la memoria
         if 'editor_key' not in st.session_state:
             st.session_state.editor_key = 0
 
-        # 4. El editor ahora usa la llave dinámica
         df_editado = st.data_editor(
             df_resultado,
             disabled=columnas_protegidas,
@@ -375,7 +379,6 @@ if st.session_state.datos_cargados:
             key=f"editor_matriz_{st.session_state.editor_key}"
         )
 
-        # 5. Calculamos e inyectamos las Métricas
         with cont_metricas:
             total_inventario = df_editado['LSKD_DC_SOH'].sum()
             df_solo_tiendas = df_editado[tiendas_destino]
@@ -387,25 +390,23 @@ if st.session_state.datos_cargados:
             pct_global = (total_asignado / total_inventario * 100) if total_inventario > 0 else 0
             col3.metric(txt["metric_pct"], f"{pct_global:.1f}%")
 
-        # 6. LÓGICA DE ALERTA Y RECALCULO AUTOMÁTICO
         with cont_alertas:
-            limite_maximo_permitido = max_send_pct + flex_margin
+            # CORRECCIÓN DE LA ALERTA: Aseguramos que ambos son porcentajes flotantes reales
+            limite_porcentual = float(max_send_pct + flex_margin)
+            asignacion_porcentual = float(pct_global)
             
-            # Si el % sobrepasa la regla configurada en el panel izquierdo...
-            if round(pct_global, 1) > round(limite_maximo_permitido, 1):
+            if round(asignacion_porcentual, 1) > round(limite_porcentual, 1):
                 if idioma == "Español":
-                    st.warning(f"⚠️ **Límite Excedido:** Tus ajustes manuales han elevado la asignación global al **{pct_global:.1f}%**, superando la regla máxima permitida (**{limite_maximo_permitido}%**).")
-                    btn_text = "🔄 Restaurar Regla Matemática (Borrar Cambios Manuales)"
+                    st.warning(f"⚠️ **Límite Excedido:** Tus ajustes manuales han elevado la asignación global al **{asignacion_porcentual:.1f}%**, superando la regla máxima permitida (**{limite_porcentual:.1f}%**).")
+                    btn_text = "🔄 Restaurar Regla Matemática"
                 else:
-                    st.warning(f"⚠️ **Limit Exceeded:** Your manual edits raised the global allocation to **{pct_global:.1f}%**, exceeding the maximum allowed rule (**{limite_maximo_permitido}%**).")
-                    btn_text = "🔄 Reset to Mathematical Rule (Clear Manual Edits)"
+                    st.warning(f"⚠️ **Limit Exceeded:** Current allocation (**{asignacion_porcentual:.1f}%**) exceeds the limit (**{limite_porcentual:.1f}%**).")
+                    btn_text = "🔄 Reset to Math Rule"
                 
-                # Si el usuario hace clic en el botón, cambiamos la llave y recargamos la página
                 if st.button(btn_text):
                     st.session_state.editor_key += 1
                     st.rerun()
 
-        # 7. Inyectamos los Gráficos
         with cont_graficos:
             graf_col1, graf_col2 = st.columns(2)
 
@@ -424,45 +425,37 @@ if st.session_state.datos_cargados:
 
             with graf_col2:
                 st.markdown(txt["chart_title_size"])
-                
-                # Consolidación de datos
                 df_editado_tallas = df_editado.copy()
                 df_editado_tallas['Total_Asignado'] = df_solo_tiendas.sum(axis=1)
                 df_tallas = df_editado_tallas.groupby('Size')['Total_Asignado'].sum().reset_index()
                 
-                # Selector de tallas
                 tallas_disponibles = df_tallas['Size'].unique().tolist()
                 tallas_seleccionadas = st.multiselect(txt["size_filter"], tallas_disponibles, default=tallas_disponibles)
                 df_tallas_filt = df_tallas[df_tallas['Size'].isin(tallas_seleccionadas)]
                 
-                # NUEVO: Selector de orden robusto
+                # NUEVO SELECTOR DE ORDEN
                 opciones_orden = ["Mayor a Menor", "Menor a Mayor", "Orden Natural (Tallas)"]
                 orden = st.radio("Ordenar barras por:", opciones_orden, horizontal=True, key="orden_tallas_radio")
                 
-                # Lógica matemática de ordenamiento
                 if orden == "Mayor a Menor":
                     df_tallas_filt = df_tallas_filt.sort_values(by='Total_Asignado', ascending=False)
                 elif orden == "Menor a Mayor":
                     df_tallas_filt = df_tallas_filt.sort_values(by='Total_Asignado', ascending=True)
                 else:
-                    # Orden natural del Retail
                     orden_tallas_retail = ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', 'ONE SIZE']
                     df_tallas_filt['Size'] = pd.Categorical(df_tallas_filt['Size'], categories=orden_tallas_retail, ordered=True)
                     df_tallas_filt = df_tallas_filt.sort_values('Size')
                 
-                # Dibujado del gráfico
                 fig_size = px.bar(
                     df_tallas_filt, x='Size', y='Total_Asignado',
                     color='Total_Asignado', color_continuous_scale='Teal', text_auto=True
                 )
-                
-                # TRUCO VITAL: Obligar a Plotly a respetar estrictamente el orden del DataFrame
+                # FORZAR A PLOTLY A OBEDECER TU ORDEN
                 fig_size.update_xaxes(categoryorder='array', categoryarray=df_tallas_filt['Size'].astype(str))
                 fig_size.update_layout(margin=dict(t=10, b=10))
-                
                 st.plotly_chart(fig_size, use_container_width=True)
 
-        # 8. Descarga de Excel de la semana actual
+        # 8. Descarga de Excel
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             df_editado.to_excel(writer, index=False, sheet_name='Asignacion_Semanal')
@@ -475,51 +468,42 @@ if st.session_state.datos_cargados:
             mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
 
-        # --- SECCIÓN DE REGISTRO HISTÓRICO (CORREGIDA) ---
+        # --- REGISTRO HISTÓRICO EN EXCEL ---
         st.markdown("---")
-        st.subheader("💾 Registro Histórico")
+        st.subheader("💾 Registro Histórico Acumulado")
         
-        # Botón 1: Guardar la tabla actual en la base de datos acumulada
-        if st.button("Guardar esta asignación en el Historial"):
-            try:
-                # Preparar datos
-                df_hist = df_editado.copy()
-                df_hist['Fecha_Procesado'] = st.session_state.fecha_es
-                df_hist['Target_WOC_Usado'] = target_woc
-                
-                nombre_archivo = "historico_asignaciones_lskd.csv"
-                
-                # Intentar leer el histórico y concatenar
-                try:
-                    df_existente = pd.read_csv(nombre_archivo)
-                    df_final_hist = pd.concat([df_existente, df_hist], ignore_index=True)
-                except FileNotFoundError:
-                    # Si no existe, este es el primer registro
-                    df_final_hist = df_hist
-                
-                # Guardar el CSV en el servidor
-                df_final_hist.to_csv(nombre_archivo, index=False)
-                st.success(f"✅ ¡Datos integrados al historial con éxito! Ya puedes descargarlo.")
-                
-            except Exception as e:
-                st.error(f"No se pudo guardar el historial: {e}")
+        col_h1, col_h2 = st.columns(2)
+        nombre_csv = "historico_asignaciones_lskd.csv"
 
-        # Botón 2: Descargar el archivo acumulado completo
-        try:
+        with col_h1:
+            if st.button("➕ Integrar esta semana al Historial"):
+                df_hist = df_editado.copy()
+                df_hist['Fecha_Registro'] = st.session_state.fecha_es
+                try:
+                    df_ex = pd.read_csv(nombre_csv)
+                    pd.concat([df_ex, df_hist], ignore_index=True).to_csv(nombre_csv, index=False)
+                except:
+                    df_hist.to_csv(nombre_csv, index=False)
+                st.success("✅ Datos guardados con éxito.")
+
+        with col_h2:
             import os
-            if os.path.exists("historico_asignaciones_lskd.csv"):
-                with open("historico_asignaciones_lskd.csv", "rb") as file:
-                    st.download_button(
-                        label="📥 Descargar Base de Datos Histórica (CSV)",
-                        data=file,
-                        file_name="historico_asignaciones_lskd.csv",
-                        mime="text/csv",
-                    )
-        except Exception as e:
-            pass
+            if os.path.exists(nombre_csv):
+                # Leemos el CSV oculto y lo convertimos a Excel en memoria para la descarga
+                df_full = pd.read_csv(nombre_csv)
+                buffer_xlsx = io.BytesIO()
+                with pd.ExcelWriter(buffer_xlsx, engine='openpyxl') as writer:
+                    df_full.to_excel(writer, index=False, sheet_name='Historial')
+                
+                st.download_button(
+                    label="📥 Descargar Historial Completo (Excel)",
+                    data=buffer_xlsx.getvalue(),
+                    file_name="Master_Historico_LSKD.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="btn_desc_hist_xlsx"
+                )
 
     except Exception as e:
-        # Este es el cierre correcto del try-except principal del motor
         st.error(f"{txt['error_msg']}{e}")
 
 # --- FOOTER ---
