@@ -236,22 +236,23 @@ if st.session_state.datos_cargados:
         df_stores = st.session_state.df_stores.copy()
         df_curve = st.session_state.df_curve.copy()
 
-        # Recuperamos las métricas de la memoria (si existen)
+        # Recuperamos las métricas de la memoria (Limpiando espacios invisibles)
         if st.session_state.df_metrics is not None:
             df_metrics = st.session_state.df_metrics.copy()
-            df_metrics['Key'] = df_metrics['SKU'].astype(str) + "_" + df_metrics['Store'].astype(str)
+            df_metrics['Key'] = df_metrics['SKU'].astype(str).str.strip() + "_" + df_metrics['Store'].astype(str).str.strip()
             metrics_dict = df_metrics.set_index('Key').to_dict('index')
         else:
             metrics_dict = {}
 
         # Mapeos base
-        store_grades = pd.Series(df_stores['Womens_Allocation_Grade'].values, index=df_stores['Store']).to_dict()
+        store_grades = pd.Series(df_stores['Womens Allocation Grade'].values, index=df_stores['Store']).to_dict()
         store_climates = pd.Series(df_stores['Climate'].astype(str).str.lower().str.strip().values, index=df_stores['Store']).to_dict()
         tiendas_destino = df_stores['Store'].dropna().tolist()
 
         df_resultado = df_newness[['SKU', 'Product_Name', 'Size', 'Gender', 'Gender_&_Category', 'LSKD_DC_SOH', 'Grade']].copy()
         df_resultado['LSKD_DC_SOH'] = pd.to_numeric(df_resultado['LSKD_DC_SOH'], errors='coerce').fillna(0)
 
+        # 1. Curva Estática (Para Newness)
         def obtener_multiplicador(row):
             try:
                 talla = str(row['Size']).strip()
@@ -266,46 +267,68 @@ if st.session_state.datos_cargados:
         df_resultado['Curve_Multiplier'] = df_resultado.apply(obtener_multiplicador, axis=1)
         df_resultado['Norm_Curve'] = df_resultado.groupby('Product_Name')['Curve_Multiplier'].transform(lambda x: x / x.mean() if x.mean() > 0 else 1)
 
-        limite_absoluto = (max_send_pct + flex_margin) / 100.0
-        df_resultado['Max_Allocable'] = np.clip(df_resultado['LSKD_DC_SOH'] * limite_absoluto * df_resultado['Norm_Curve'], 0, df_resultado['LSKD_DC_SOH'])
-
-        # Matriz de Pesos Inteligente (Basada en Ventas)
+        # 2. Matriz de Pesos Inteligente y Asignación Máxima Dinámica
         df_pesos = pd.DataFrame(index=df_resultado.index, columns=tiendas_destino)
+        allocable_real = []
+        limite_absoluto = (max_send_pct + flex_margin) / 100.0
 
-        for tienda in tiendas_destino:
-            grade_tienda = store_grades.get(tienda, 'C')
-            peso_base = dict_pesos.get(grade_tienda, 0)
-            clima_tienda = store_climates.get(tienda, '')
+        for idx, row in df_resultado.iterrows():
+            sku = str(row['SKU']).strip()
+            soh_bodega = row['LSKD_DC_SOH']
+            
+            suma_necesidades = 0
+            pesos_fila = []
+            es_reposicion = False
 
-            pesos_tienda = []
+            for tienda in tiendas_destino:
+                t = str(tienda).strip()
+                grade_tienda = store_grades.get(t, 'C')
+                peso_base = dict_pesos.get(grade_tienda, 0)
+                clima_tienda = store_climates.get(t, '')
 
-            for idx, row in df_resultado.iterrows():
-                key = f"{row['SKU']}_{tienda}"
+                key = f"{sku}_{t}"
                 metricas = metrics_dict.get(key, {})
                 
                 ventas = metricas.get('Sales_L4W', 0)
                 soh_tienda = metricas.get('Store_SOH', 0)
                 
-                # LÓGICA REPOSICIÓN: Necesidad = (Venta Semanal * WOC) - Stock Actual
                 if ventas > 0:
+                    es_reposicion = True
+                    # LÓGICA REPOSICIÓN (PULL)
                     venta_semanal = ventas / 4
                     target_stock = venta_semanal * target_woc
-                    # Si el stock actual es menor al objetivo, pedimos la diferencia
                     necesidad = target_stock - soh_tienda
-                    peso_final = max(necesidad, 0.001) # Mínimo un valor pequeño si hay venta
+                    peso_final = max(necesidad, 0.001) 
+                    
+                    if necesidad > 0:
+                        suma_necesidades += necesidad
                 else:
+                    # LÓGICA NEWNESS (PUSH)
                     peso_final = peso_base
 
-                # Filtros de exclusión (Top Tier y Clima)
+                # Filtros de exclusión
                 if (row['Grade'] == 'TOP TIER' and grade_tienda in ['C', 'D']) or \
                    (temporada_backend != "ambos" and row['Grade'] == 'CLIMATE SPECIFIC' and clima_tienda != temporada_backend):
                     peso_final = 0
 
-                pesos_tienda.append(peso_final)
+                pesos_fila.append(peso_final)
             
-            df_pesos[tienda] = pesos_tienda
+            df_pesos.loc[idx] = pesos_fila
 
-        # 3. Reparto con Método del Resto Mayor
+            # 3. MAGIA HÍBRIDA: ¿Push o Pull?
+            if es_reposicion:
+                # PULL: Ignoramos el slider del 30%. Mandamos la necesidad real de las tiendas.
+                max_unidades = min(suma_necesidades, soh_bodega)
+            else:
+                # PUSH: Usamos la regla del slider (ej. 30%)
+                max_unidades = soh_bodega * limite_absoluto * row['Norm_Curve']
+                
+            # Cuidamos no enviar más de lo que hay en bodega ni números negativos
+            allocable_real.append(max(0, min(max_unidades, soh_bodega)))
+
+        df_resultado['Max_Allocable'] = allocable_real
+
+        # 4. Reparto con Método del Resto Mayor
         for idx in df_resultado.index:
             max_units = int(np.round(df_resultado.loc[idx, 'Max_Allocable']))
             pesos_row = df_pesos.loc[idx, tiendas_destino].values.astype(float)
