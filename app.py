@@ -432,13 +432,6 @@ if st.session_state.datos_cargados:
                     alloc[i] += 1
             df_resultado.loc[idx, tiendas_destino] = alloc
             
-        # --- PREPARACIÓN DE MÉTRICAS GLOBALES ---
-        # Calculamos esto antes para que el comparador pueda guardar los datos correctos
-        df_solo_tiendas = df_editado[tiendas_destino]
-        total_inventario = df_editado['LSKD_DC_SOH'].sum()
-        total_asignado = df_solo_tiendas.sum().sum()
-        pct_global = (total_asignado / total_inventario * 100) if total_inventario > 0 else 0
-
         # --- SECCIÓN VISUAL CON TABS ---
         st.markdown("---")
         fecha_mostrar = st.session_state.fecha_es if idioma == "Español" else st.session_state.fecha_en
@@ -448,10 +441,6 @@ if st.session_state.datos_cargados:
 
         with tab_principal:
             st.subheader(f"{txt['metrics_title']} ({fecha_mostrar})")
-
-            cont_metricas = st.container()
-            cont_alertas = st.container()
-            cont_graficos = st.container()
             
             st.markdown("---")
             st.subheader(txt["matrix_title"])
@@ -461,6 +450,22 @@ if st.session_state.datos_cargados:
             else:
                 st.info("💡 **Fine-tuning:** Double-click any cell under a store name to manually modify the quantity.")
 
+            # 1. CREAMOS EL EDITOR PRIMERO (Esto define 'df_editado')
+            columnas_protegidas = ['SKU', 'Product_Name', 'Size', 'Gender', 'Gender_&_Category', 'LSKD_DC_SOH', 'Grade', 'Curve_Multiplier', 'Norm_Curve', 'Max_Allocable']
+            df_editado = st.data_editor(
+                df_resultado, disabled=columnas_protegidas, use_container_width=True, hide_index=True, key=f"editor_matriz_{st.session_state.editor_key}"
+            )
+
+            # 2. AHORA SÍ CALCULAMOS LAS MÉTRICAS GLOBALES BASADAS EN LO EDITADO
+            df_solo_tiendas = df_editado[tiendas_destino]
+            total_inventario = df_editado['LSKD_DC_SOH'].sum()
+            total_asignado = df_solo_tiendas.sum().sum()
+            pct_global = (total_asignado / total_inventario * 100) if total_inventario > 0 else 0
+
+            cont_metricas = st.container()
+            cont_alertas = st.container()
+            cont_graficos = st.container()
+
             with cont_metricas:
                 col1, col2, col3 = st.columns(3)
                 col1.metric(txt["metric_inv"], f"{int(total_inventario):,}")
@@ -468,10 +473,11 @@ if st.session_state.datos_cargados:
                 col3.metric(txt["metric_pct"], f"{pct_global:.1f}%")
 
             with cont_alertas:
-                limite_porcentual = float(max_send_pct + flex_margin)
-                asignacion_porcentual = float(pct_global)
+                # Ajuste de precisión a 1 decimal para evitar falsas alertas por coma flotante
+                limite_porcentual = round(float(max_send_pct + flex_margin), 1)
+                asignacion_porcentual = round(float(pct_global), 1)
                 
-                if round(asignacion_porcentual, 1) > round(limite_porcentual, 1):
+                if asignacion_porcentual > limite_porcentual:
                     st.warning(f"⚠️ Límite Excedido: Tu asignación ({asignacion_porcentual:.1f}%) supera la regla máxima permitida ({limite_porcentual:.1f}%).")
                     if st.button("🔄 Restaurar Regla Matemática"):
                         st.session_state.editor_key += 1
@@ -510,12 +516,6 @@ if st.session_state.datos_cargados:
                     fig_size.update_xaxes(categoryorder='array', categoryarray=df_tallas['Size'].astype(str))
                     fig_size.update_layout(margin=dict(t=10, b=10))
                     st.plotly_chart(fig_size, use_container_width=True)
-
-            # Matriz incrustada en el Tab Principal
-            columnas_protegidas = ['SKU', 'Product_Name', 'Size', 'Gender', 'Gender_&_Category', 'LSKD_DC_SOH', 'Grade', 'Curve_Multiplier', 'Norm_Curve', 'Max_Allocable']
-            df_final_matrix = st.data_editor(
-                df_resultado, disabled=columnas_protegidas, use_container_width=True, hide_index=True, key=f"editor_matriz_{st.session_state.editor_key}"
-            )
 
         with tab_comparador:
             st.markdown("### ⚖️ Comparador de Escenarios")
