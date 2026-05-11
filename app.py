@@ -80,22 +80,29 @@ t = {
         "doc_title": "📚 Documentación, Metodología e Insumos",
         "doc_content": """
         ### 📌 Resumen de la App
-        Esta aplicación automatiza el proceso semanal de *Allocation* y Reposición para LSKD. Cruza el inventario de bodega (SOH) con el desempeño real de las tiendas, permitiendo un flujo de inventario inteligente y dinámico.
+        Esta aplicación automatiza el proceso semanal de *Allocation* y Reposición para LSKD. Es un sistema modular que se adapta a la información disponible: puede hacer un reparto básico (Push) o cruzar el inventario en tiempo real (SOH) con el desempeño real de las tiendas (Pull), permitiendo un flujo de inventario inteligente y dinámico.
         
         ### ⚙️ Metodología y Conceptos Clave
-        * **Híbrido Push/Pull:** Si el producto tiene historial de ventas, el sistema hace **Reposición (Pull)** basándose en el Target WOC. Si es nuevo, usa **Pesos (Push)** por grado de tienda (A, B, C, D).
-        * **Target WOC (Weeks of Cover):** Calcula cuántas semanas de venta queremos cubrir. La app enviará unidades solo si el stock actual de la tienda no alcanza para cubrir el objetivo de semanas.
-        * **Método del Resto Mayor:** Garantiza que el 100% de las unidades calculadas se repartan sin perderse por redondeos decimales.
-        * **Filtros Inteligentes:** Aplica reglas de Clima (verano/invierno) y exclusión de tiendas C/D para productos TOP TIER.
+        * **Híbrido Push/Pull:** Si el producto tiene historial de ventas, el sistema activa la **Reposición (Pull)** basándose en el Target WOC. Para lanzamientos nuevos, utiliza **Pesos (Push)** por grado de tienda (A, B, C, D).
+        * **Target WOC (Weeks of Cover):** Define el objetivo de cobertura en semanas. La app calcula la "sed" de inventario de cada tienda restando su stock actual del stock ideal necesario para cubrir el periodo seleccionado.
+        * **Método del Resto Mayor:** Algoritmo de precisión que elimina el error de redondeo decimal, asegurando que el 100% de las unidades disponibles se asignen equitativamente.
+        * **Filtros Inteligentes:** Gestión automática de exclusiones para productos **TOP TIER** (solo tiendas A y B) y segmentación por **Clima** (Verano/Invierno/Ambos).
+        * **Protección de Sobre-stock:** El motor bloquea envíos a tiendas cuyo inventario actual ya supera el objetivo de cobertura, priorizando el flujo hacia puntos de venta con riesgo de quiebre.
 
-        ### 📥 Insumos Requeridos y Estructura
-        Requiere un Excel (`.xlsx`) con cuatro hojas:
-        1. **`Newness`**: Base de productos a enviar.
-        2. **`Store_Grading`**: Calificación y clima de tiendas.
-        3. **`Size_Curve`**: Curva de tallas estática (para productos nuevos).
-        4. **`Store_Metrics`**: Ventas L4W e inventario actual por tienda (para Reposición).
-        """
-    },
+        ### 🧠 Inteligencia de Curvas y Entrenamiento
+        El sistema cuenta con un motor de **Machine Learning** incipiente que lee el archivo de registro histórico acumulado. 
+        * **Semanas de Entrenamiento:** Indica cuántos periodos de datos históricos tiene la app en su memoria (`historico_asignaciones_lskd.csv`). 
+        * **Selección Dinámica:** Permite elegir qué semanas específicas usar para entrenar el modelo, permitiendo ignorar periodos atípicos (como promociones agresivas o cierres temporales) para obtener una curva de demanda más limpia.
+
+        ### 📥 Estructura de Insumos (Las 5 Hojas del Master Excel)
+        El sistema escanea el archivo cargado y activa niveles de inteligencia según las pestañas presentes:
+        1. **`Newness`**: Base maestra con la lista de productos, categorías, tallas y el grado del producto.
+        2. **`Store_Grading`**: Directorio de tiendas con su calificación (A-D) y zona climática asignada.
+        3. **`Size_Curve`**: Matriz de multiplicadores estáticos por categoría (usada cuando no hay datos de venta).
+        4. **`Store_Metrics`**: El pulso de las tiendas. Contiene las ventas de las últimas 4 semanas (`Sales_L4W`) y el stock físico en tienda (`Store_SOH`).
+        5. **`SOH`**: Reporte vivo del Centro de Distribución. Utiliza las columnas `SKU` y `LSKD_DC` para actualizar las existencias en bodega justo antes de iniciar el cálculo, garantizando que no se asigne mercancía inexistente.
+        """,
+    
     "English": {
         "title": "📦 LSKD Weekly Allocation System",
         "sidebar_header": "⚙️ Allocation Parameters",
@@ -134,26 +141,31 @@ t = {
         "tt_woc": "Defines how many weeks of sales you want to cover in-store. Example: 4 weeks means the store will always have stock for one month of sales.",
         "risk_alert": "⚠️ STOCKOUT RISK",
         
-        # --- AÑADIR DESDE AQUÍ ---
         "doc_title": "📚 Documentation, Methodology & Inputs",
         "doc_content": """
         ### 📌 App Summary
-        This application automates the weekly *Allocation* process for LSKD. It crosses the available warehouse inventory (SOH) with each store's grading, respecting strict capacity rules and adapting organically to the historical size curve.
+        This application automates the weekly *Allocation* and Replenishment process for LSKD. It is a modular system that adapts to the available information: it can execute a basic distribution (Push) or cross real-time inventory (SOH) with actual store performance (Pull), ensuring a smart and dynamic inventory flow.
         
         ### ⚙️ Methodology & Key Concepts
-        * **Largest Remainder Method:** Algorithm used in the final distribution step. It avoids "rounding down loss", ensuring exact global targets.
-        * **Dynamic Curve Multiplier:** Crosses the product's size and category with the `Size_Curve` sheet to naturally inflate allocation for popular sizes based on historical weights.
-        * **Season Selector:** If the weekly product is graded `CLIMATE SPECIFIC`, the engine zeroes out the allocation to cities that do not match the selected season.
-        * **TOP TIER Filter:** Excludes `TOP TIER` products from C and D graded stores automatically.
+        * **Hybrid Push/Pull:** If the product has a sales history, the system activates **Replenishment (Pull)** based on the Target WOC. For new releases, it uses **Weights (Push)** by store grade (A, B, C, D).
+        * **Target WOC (Weeks of Cover):** Defines the coverage goal in weeks. The app calculates each store's inventory "thirst" by subtracting its current stock from the ideal stock needed to cover the selected period.
+        * **Largest Remainder Method:** A precision algorithm that eliminates decimal rounding errors, ensuring 100% of the available units are allocated accurately.
+        * **Smart Filters:** Automatic exclusion management for **TOP TIER** products (only A and B stores) and **Climate** segmentation (Summer/Winter/Both).
+        * **Over-stock Protection:** The engine blocks shipments to stores whose current inventory already exceeds the coverage target, prioritizing flow to locations at risk of out-of-stocks.
 
-        ### 📥 Required Inputs & Structure
-        Requires an Excel (`.xlsx`) file with three sheets:
-        1. **`Newness`**: Product database.
-        2. **`Store_Grading`**: Store database with grading and climate.
-        3. **`Size_Curve`**: Matrix of demand multipliers.
+        ### 🧠 Curve Intelligence & Training
+        The system features an emerging **Machine Learning** engine that reads the accumulated historical log. 
+        * **Training Weeks:** Indicates how many periods of historical data the app has in its memory (`historico_asignaciones_lskd.csv`). 
+        * **Dynamic Selection:** Allows choosing which specific weeks to use for training the model. This makes it possible to ignore atypical periods (like aggressive promotions or temporary closures) to obtain a cleaner demand curve.
+
+        ### 📥 Inputs Structure (The 5 Sheets of the Master Excel)
+        The system scans the uploaded file and activates intelligence levels based on the present sheets:
+        1. **`Newness`**: Master base with the product list, categories, sizes, and product grade.
+        2. **`Store_Grading`**: Store directory with their grading (A-D) and assigned climate zone.
+        3. **`Size_Curve`**: Matrix of static multipliers by category (used when there is no sales data).
+        4. **`Store_Metrics`**: The pulse of the stores. Contains the sales of the last 4 weeks (`Sales_L4W`) and physical stock in store (`Store_SOH`).
+        5. **`SOH`**: Live report from the Distribution Center. Uses the `SKU` and `LSKD_DC` columns to update warehouse stock right before calculating, ensuring non-existent merchandise is never allocated.
         """
-    }
-}
 
 txt = t[idioma]
 st.title(txt["title"])
@@ -188,6 +200,29 @@ dict_pesos = {'A': peso_a / total_peso, 'B': peso_b / total_peso, 'C': peso_c / 
 st.sidebar.subheader(txt["target_woc_title"])
 target_woc = st.sidebar.slider(txt["target_woc_slider"], 1, 8, 4, help=txt["tt_woc"], on_change=reset_editor)
 
+# --- NUEVO CONTROL: ENTRENAMIENTO DE CURVAS ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("🧠 Entrenamiento de Curvas (Machine Learning)")
+try:
+    import os
+    if os.path.exists("historico_asignaciones_lskd.csv"):
+        df_historial = pd.read_csv("historico_asignaciones_lskd.csv")
+        semanas_disponibles = df_historial['Fecha_Registro'].dropna().unique().tolist()
+        num_semanas = len(semanas_disponibles)
+        
+        st.sidebar.success(f"✅ ¡Tenemos **{num_semanas} semanas** de datos de entrenamiento disponibles!")
+        
+        semanas_seleccionadas = st.sidebar.multiselect(
+            "Selecciona qué semanas usar para el cálculo de curvas dinámicas:",
+            options=semanas_disponibles,
+            default=semanas_disponibles
+        )
+    else:
+        st.sidebar.info("⏳ Aún no hay semanas de entrenamiento. (Se usarán las curvas estáticas de Size_Curve). Guarda tu primera asignación para empezar a entrenar el modelo.")
+        semanas_seleccionadas = []
+except Exception as e:
+    st.sidebar.info("⏳ Aún no hay semanas de entrenamiento. Guarda tu primera asignación para empezar a entrenar.")
+    semanas_seleccionadas = []
 
 # --- ACCESO ADMINISTRADOR Y CARGA DE ARCHIVO ---
 with st.expander(txt["admin_title"], expanded=not st.session_state.datos_cargados):
@@ -202,47 +237,52 @@ with st.expander(txt["admin_title"], expanded=not st.session_state.datos_cargado
             
             if st.session_state.last_file_id != current_file_id:
                 with st.spinner(txt["processing"]):
-                    # 1. Leer hojas base
-                    df_newness = pd.read_excel(uploaded_file, sheet_name='Newness', engine='openpyxl')
+                    # Escanear las hojas que trae el archivo
+                    xls = pd.ExcelFile(uploaded_file, engine='openpyxl')
+                    hojas_disponibles = xls.sheet_names
+                    
+                    # 1. Leer hojas base (OBLIGATORIAS)
+                    df_newness = pd.read_excel(xls, sheet_name='Newness')
                     df_newness.columns = df_newness.columns.astype(str).str.strip().str.replace(' ', '_')
                     
-                    df_stores = pd.read_excel(uploaded_file, sheet_name='Store_Grading', engine='openpyxl')
+                    df_stores = pd.read_excel(xls, sheet_name='Store_Grading')
                     df_stores.columns = df_stores.columns.astype(str).str.strip()
                     
-                    df_curve = pd.read_excel(uploaded_file, sheet_name='Size_Curve', engine='openpyxl')
+                    df_curve = pd.read_excel(xls, sheet_name='Size_Curve')
                     df_curve.columns = df_curve.columns.astype(str).str.strip()
 
-                    # 2. Leer Hoja SOH (Dentro del mismo archivo)
-                    try:
-                        df_soh_sheet = pd.read_excel(uploaded_file, sheet_name='SOH', engine='openpyxl')
-                        df_soh_sheet.columns = df_soh_sheet.columns.astype(str).str.strip()
-                        
-                        # AQUÍ ESTÁ LA MAGIA: Usamos tus nombres exactos
-                        nombre_columna_sku = 'SKU' 
-                        nombre_columna_cantidad = 'LSKD_DC'
-                        
-                        # Creamos el mapa cruzando el SKU con el inventario de LSKD_DC
-                        soh_map = pd.Series(
-                            df_soh_sheet[nombre_columna_cantidad].values, 
-                            index=df_soh_sheet[nombre_columna_sku].astype(str).str.upper().str.strip()
-                        ).to_dict()
-                        
-                        # Actualizamos la bodega principal
-                        df_newness['LSKD_DC_SOH'] = df_newness['SKU'].astype(str).str.upper().str.strip().map(soh_map).fillna(df_newness['LSKD_DC_SOH'])
-                        
-                    except Exception as e:
-                        st.warning(f"⚠️ No se pudo procesar la hoja 'SOH'. Usando inventario base de Newness. Detalle: {e}")
+                    modo_app = "Básico (Push)"
 
-                    # 3. Leer Hoja Store_Metrics
-                    try:
-                        df_metrics = pd.read_excel(uploaded_file, sheet_name='Store_Metrics', engine='openpyxl')
-                        df_metrics.columns = df_metrics.columns.astype(str).str.strip()
-                        st.session_state.df_metrics = df_metrics
-                    except Exception as e:
-                        st.warning(f"⚠️ No se encontró la hoja 'Store_Metrics'. Motor PULL desactivado. ({e})")
+                    # 2. Leer Hoja SOH (OPCIONAL - NIVEL AVANZADO)
+                    if 'SOH' in hojas_disponibles:
+                        try:
+                            df_soh_sheet = pd.read_excel(xls, sheet_name='SOH')
+                            df_soh_sheet.columns = df_soh_sheet.columns.astype(str).str.strip()
+                            nombre_columna_sku = 'SKU' 
+                            nombre_columna_cantidad = 'LSKD_DC'
+                            soh_map = pd.Series(df_soh_sheet[nombre_columna_cantidad].values, index=df_soh_sheet[nombre_columna_sku].astype(str).str.upper().str.strip()).to_dict()
+                            df_newness['LSKD_DC_SOH'] = df_newness['SKU'].astype(str).str.upper().str.strip().map(soh_map).fillna(df_newness['LSKD_DC_SOH'])
+                            modo_app = "Avanzado (Con SOH)"
+                        except Exception as e:
+                            st.warning(f"⚠️ La hoja 'SOH' existe pero hubo un error al leerla: {e}")
+
+                    # 3. Leer Hoja Store_Metrics (OPCIONAL - NIVEL HÍBRIDO)
+                    if 'Store_Metrics' in hojas_disponibles:
+                        try:
+                            df_metrics = pd.read_excel(xls, sheet_name='Store_Metrics')
+                            df_metrics.columns = df_metrics.columns.astype(str).str.strip()
+                            st.session_state.df_metrics = df_metrics
+                            if modo_app == "Avanzado (Con SOH)":
+                                modo_app = "Enterprise (5 Hojas)"
+                            else:
+                                modo_app = "Híbrido (Push/Pull)"
+                        except Exception as e:
+                            st.warning(f"⚠️ Error en hoja 'Store_Metrics': {e}")
+                            st.session_state.df_metrics = None
+                    else:
                         st.session_state.df_metrics = None
 
-                    # Guardar en memoria RAM
+                    # Guardar en memoria
                     st.session_state.df_newness = df_newness
                     st.session_state.df_stores = df_stores
                     st.session_state.df_curve = df_curve
@@ -251,7 +291,8 @@ with st.expander(txt["admin_title"], expanded=not st.session_state.datos_cargado
                     st.session_state.last_file_id = current_file_id
                     st.session_state.datos_cargados = True
                     
-                    st.toast(txt["success_msg"], icon="✅")
+                    # Mensaje de éxito informando el modo
+                    st.success(f"✅ Archivo cargado exitosamente. Nivel de inteligencia activado: **{modo_app}**")
 
 # --- MOTOR MATEMÁTICO Y DASHBOARD ---
 if st.session_state.datos_cargados:
