@@ -241,22 +241,35 @@ with st.expander(txt["admin_title"], expanded=not st.session_state.datos_cargado
                     xls = pd.ExcelFile(uploaded_file, engine='openpyxl')
                     hojas_disponibles = xls.sheet_names
                     
-                    # 1. Leer hojas base (OBLIGATORIAS)
-                    df_newness = pd.read_excel(xls, sheet_name='Newness')
-                    df_newness.columns = df_newness.columns.astype(str).str.strip().str.replace(' ', '_')
-                    
-                    df_stores = pd.read_excel(xls, sheet_name='Store_Grading')
-                    df_stores.columns = df_stores.columns.astype(str).str.strip()
-                    
-                    df_curve = pd.read_excel(xls, sheet_name='Size_Curve')
-                    df_curve.columns = df_curve.columns.astype(str).str.strip()
+                    # Buscador inteligente de hojas (ignora espacios, guiones y mayúsculas)
+                    def buscar_hoja(nombre_ideal):
+                        for h in hojas_disponibles:
+                            if h.replace(' ', '').replace('_', '').lower() == nombre_ideal.replace(' ', '').replace('_', '').lower():
+                                return h
+                        return nombre_ideal # Si no la encuentra, devuelve el original para forzar el error manejado
+
+                    try:
+                        # 1. Leer hojas base (OBLIGATORIAS)
+                        df_newness = pd.read_excel(xls, sheet_name=buscar_hoja('Newness'))
+                        df_newness.columns = df_newness.columns.astype(str).str.strip().str.replace(' ', '_')
+                        
+                        df_stores = pd.read_excel(xls, sheet_name=buscar_hoja('Store_Grading'))
+                        df_stores.columns = df_stores.columns.astype(str).str.strip()
+                        
+                        df_curve = pd.read_excel(xls, sheet_name=buscar_hoja('Size_Curve'))
+                        df_curve.columns = df_curve.columns.astype(str).str.strip()
+                    except ValueError:
+                        # Si realmente falta una hoja, mostramos un error amigable y detenemos el proceso
+                        st.error("❌ **Error Crítico:** Tu archivo Excel no tiene las 3 hojas base obligatorias (`Newness`, `Store_Grading` y `Size_Curve`). Por favor revisa el archivo y vuelve a subirlo.")
+                        st.stop() # Esto detiene la app limpiamente sin mostrar la pantalla roja
 
                     modo_app = "Básico (Push)"
 
                     # 2. Leer Hoja SOH (OPCIONAL - NIVEL AVANZADO)
-                    if 'SOH' in hojas_disponibles:
+                    hoja_soh_encontrada = buscar_hoja('SOH')
+                    if hoja_soh_encontrada in hojas_disponibles:
                         try:
-                            df_soh_sheet = pd.read_excel(xls, sheet_name='SOH')
+                            df_soh_sheet = pd.read_excel(xls, sheet_name=hoja_soh_encontrada)
                             df_soh_sheet.columns = df_soh_sheet.columns.astype(str).str.strip()
                             nombre_columna_sku = 'SKU' 
                             nombre_columna_cantidad = 'LSKD_DC'
@@ -267,9 +280,10 @@ with st.expander(txt["admin_title"], expanded=not st.session_state.datos_cargado
                             st.warning(f"⚠️ La hoja 'SOH' existe pero hubo un error al leerla: {e}")
 
                     # 3. Leer Hoja Store_Metrics (OPCIONAL - NIVEL HÍBRIDO)
-                    if 'Store_Metrics' in hojas_disponibles:
+                    hoja_metrics_encontrada = buscar_hoja('Store_Metrics')
+                    if hoja_metrics_encontrada in hojas_disponibles:
                         try:
-                            df_metrics = pd.read_excel(xls, sheet_name='Store_Metrics')
+                            df_metrics = pd.read_excel(xls, sheet_name=hoja_metrics_encontrada)
                             df_metrics.columns = df_metrics.columns.astype(str).str.strip()
                             st.session_state.df_metrics = df_metrics
                             if modo_app == "Avanzado (Con SOH)":
