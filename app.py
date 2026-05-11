@@ -167,6 +167,9 @@ t = {
         5. **`SOH`**: Live report from the Distribution Center. Uses the `SKU` and `LSKD_DC` columns to update warehouse stock right before calculating, ensuring non-existent merchandise is never allocated.
         """
 
+    }
+}
+
 txt = t[idioma]
 st.title(txt["title"])
 # --- DOCUMENTACIÓN DESPLEGABLE (SIEMPRE VISIBLE) ---
