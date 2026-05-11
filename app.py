@@ -173,7 +173,21 @@ t = {
 }
 
 txt = t[idioma]
-st.title(txt["title"])
+
+# --- ENCABEZADO CON LOGO ---
+# Creamos dos columnas: una grande para el título (85% del espacio) y una pequeña para el logo (15%)
+col_titulo, col_logo = st.columns([0.85, 0.15])
+
+with col_titulo:
+    st.title(txt["title"])
+
+with col_logo:
+    # Usamos un ancho fijo (ej. 80 o 100 píxeles) para que iguale la altura del texto del título
+    try:
+        st.image("Logo LSKD.png", width=90) 
+    except FileNotFoundError:
+        pass # Si por alguna razón el archivo no está, la app no se caerá
+        
 # --- DOCUMENTACIÓN DESPLEGABLE (SIEMPRE VISIBLE) ---
 with st.expander(txt["doc_title"]):
     st.markdown(txt["doc_content"])
