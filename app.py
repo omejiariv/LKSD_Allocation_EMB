@@ -22,6 +22,11 @@ if 'datos_cargados' not in st.session_state:
     st.session_state.last_file_id = None
     st.session_state.editor_key = 0 # Llave maestra
 
+if 'escenario_a' not in st.session_state:
+    st.session_state.escenario_a = None
+if 'escenario_b' not in st.session_state:
+    st.session_state.escenario_b = None
+
 # Función para limpiar la tabla cuando muevas un slider
 def reset_editor():
     st.session_state.editor_key += 1
@@ -427,113 +432,153 @@ if st.session_state.datos_cargados:
                     alloc[i] += 1
             df_resultado.loc[idx, tiendas_destino] = alloc
             
-        # --- SECCIÓN VISUAL ---
+        # --- PREPARACIÓN DE MÉTRICAS GLOBALES ---
+        # Calculamos esto antes para que el comparador pueda guardar los datos correctos
+        df_solo_tiendas = df_editado[tiendas_destino]
+        total_inventario = df_editado['LSKD_DC_SOH'].sum()
+        total_asignado = df_solo_tiendas.sum().sum()
+        pct_global = (total_asignado / total_inventario * 100) if total_inventario > 0 else 0
+
+        # --- SECCIÓN VISUAL CON TABS ---
         st.markdown("---")
-        
         fecha_mostrar = st.session_state.fecha_es if idioma == "Español" else st.session_state.fecha_en
-        st.subheader(f"{txt['metrics_title']} ({fecha_mostrar})")
-
-        cont_metricas = st.container()
-        cont_alertas = st.container()
-        cont_graficos = st.container()
         
-        st.markdown("---")
-        st.subheader(txt["matrix_title"])
-        
-        if idioma == "Español":
-            st.info("💡 **Ajuste Fino:** Haz doble clic en cualquier celda debajo del nombre de una tienda para modificar la cantidad manualmente. Los gráficos y métricas se actualizarán al instante.")
-        else:
-            st.info("💡 **Fine-tuning:** Double-click any cell under a store name to manually modify the quantity. Charts and metrics will update instantly.")
+        # CREACIÓN DE PESTAÑAS
+        tab_principal, tab_comparador = st.tabs(["📊 Dashboard Principal", "⚖️ Comparador What-If"])
 
-        columnas_protegidas = ['SKU', 'Product_Name', 'Size', 'Gender', 'Gender_&_Category', 'LSKD_DC_SOH', 'Grade', 'Curve_Multiplier', 'Norm_Curve', 'Max_Allocable']
-        
-        if 'editor_key' not in st.session_state:
-            st.session_state.editor_key = 0
+        with tab_principal:
+            st.subheader(f"{txt['metrics_title']} ({fecha_mostrar})")
 
-        df_editado = st.data_editor(
-            df_resultado,
-            disabled=columnas_protegidas,
-            use_container_width=True,
-            hide_index=True,
-            key=f"editor_matriz_{st.session_state.editor_key}"
-        )
-
-        with cont_metricas:
-            total_inventario = df_editado['LSKD_DC_SOH'].sum()
-            df_solo_tiendas = df_editado[tiendas_destino]
-            total_asignado = df_solo_tiendas.sum().sum()
+            cont_metricas = st.container()
+            cont_alertas = st.container()
+            cont_graficos = st.container()
             
-            col1, col2, col3 = st.columns(3)
-            col1.metric(txt["metric_inv"], f"{int(total_inventario):,}")
-            col2.metric(txt["metric_dist"], f"{int(total_asignado):,}")
-            pct_global = (total_asignado / total_inventario * 100) if total_inventario > 0 else 0
-            col3.metric(txt["metric_pct"], f"{pct_global:.1f}%")
-
-        with cont_alertas:
-            # CORRECCIÓN DE LA ALERTA: Aseguramos que ambos son porcentajes flotantes reales
-            limite_porcentual = float(max_send_pct + flex_margin)
-            asignacion_porcentual = float(pct_global)
+            st.markdown("---")
+            st.subheader(txt["matrix_title"])
             
-            if round(asignacion_porcentual, 1) > round(limite_porcentual, 1):
-                if idioma == "Español":
-                    st.warning(f"⚠️ **Límite Excedido:** Tus ajustes manuales han elevado la asignación global al **{asignacion_porcentual:.1f}%**, superando la regla máxima permitida (**{limite_porcentual:.1f}%**).")
-                    btn_text = "🔄 Restaurar Regla Matemática"
-                else:
-                    st.warning(f"⚠️ **Limit Exceeded:** Current allocation (**{asignacion_porcentual:.1f}%**) exceeds the limit (**{limite_porcentual:.1f}%**).")
-                    btn_text = "🔄 Reset to Math Rule"
+            if idioma == "Español":
+                st.info("💡 **Ajuste Fino:** Haz doble clic en cualquier celda debajo del nombre de una tienda para modificar la cantidad.")
+            else:
+                st.info("💡 **Fine-tuning:** Double-click any cell under a store name to manually modify the quantity.")
+
+            with cont_metricas:
+                col1, col2, col3 = st.columns(3)
+                col1.metric(txt["metric_inv"], f"{int(total_inventario):,}")
+                col2.metric(txt["metric_dist"], f"{int(total_asignado):,}")
+                col3.metric(txt["metric_pct"], f"{pct_global:.1f}%")
+
+            with cont_alertas:
+                limite_porcentual = float(max_send_pct + flex_margin)
+                asignacion_porcentual = float(pct_global)
                 
-                if st.button(btn_text):
-                    st.session_state.editor_key += 1
+                if round(asignacion_porcentual, 1) > round(limite_porcentual, 1):
+                    st.warning(f"⚠️ Límite Excedido: Tu asignación ({asignacion_porcentual:.1f}%) supera la regla máxima permitida ({limite_porcentual:.1f}%).")
+                    if st.button("🔄 Restaurar Regla Matemática"):
+                        st.session_state.editor_key += 1
+                        st.rerun()
+
+            with cont_graficos:
+                graf_col1, graf_col2 = st.columns(2)
+
+                with graf_col1:
+                    st.markdown(txt["chart_title_store"])
+                    asignacion_por_tienda = df_solo_tiendas.sum().reset_index()
+                    asignacion_por_tienda.columns = ['Tienda', 'Unidades']
+                    asignacion_por_tienda = asignacion_por_tienda.sort_values(by='Unidades', ascending=False)
+                    
+                    fig_store = px.bar(
+                        asignacion_por_tienda, x='Tienda', y='Unidades',
+                        color='Unidades', color_continuous_scale='Blues', text_auto=True
+                    )
+                    fig_store.update_layout(xaxis_tickangle=-45, showlegend=False, margin=dict(t=10, b=10))
+                    st.plotly_chart(fig_store, use_container_width=True)
+
+                with graf_col2:
+                    st.markdown(txt["chart_title_size"])
+                    df_editado_tallas = df_editado.copy()
+                    df_editado_tallas['Total_Asignado'] = df_solo_tiendas.sum(axis=1)
+                    df_tallas = df_editado_tallas.groupby('Size')['Total_Asignado'].sum().reset_index()
+                    
+                    orden_tallas_retail = ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', 'ONE SIZE']
+                    df_tallas['Size'] = pd.Categorical(df_tallas['Size'], categories=orden_tallas_retail, ordered=True)
+                    df_tallas = df_tallas.sort_values('Size')
+                    
+                    fig_size = px.bar(
+                        df_tallas, x='Size', y='Total_Asignado',
+                        color='Total_Asignado', color_continuous_scale='Teal', text_auto=True
+                    )
+                    fig_size.update_xaxes(categoryorder='array', categoryarray=df_tallas['Size'].astype(str))
+                    fig_size.update_layout(margin=dict(t=10, b=10))
+                    st.plotly_chart(fig_size, use_container_width=True)
+
+            # Matriz incrustada en el Tab Principal
+            columnas_protegidas = ['SKU', 'Product_Name', 'Size', 'Gender', 'Gender_&_Category', 'LSKD_DC_SOH', 'Grade', 'Curve_Multiplier', 'Norm_Curve', 'Max_Allocable']
+            df_final_matrix = st.data_editor(
+                df_resultado, disabled=columnas_protegidas, use_container_width=True, hide_index=True, key=f"editor_matriz_{st.session_state.editor_key}"
+            )
+
+        with tab_comparador:
+            st.markdown("### ⚖️ Comparador de Escenarios")
+            st.info("💡 **Instrucciones:** Ajusta los parámetros (ej. WOC o Límite) en el panel izquierdo. Guarda el Escenario A. Luego, cambia los parámetros y guarda el Escenario B para compararlos lado a lado.")
+            
+            col_a, col_b = st.columns(2)
+            
+            with col_a:
+                if st.button("📸 Guardar como Escenario A", use_container_width=True):
+                    st.session_state.escenario_a = {
+                        "nombre": f"WOC: {target_woc} | Límite: {max_send_pct}%",
+                        "unidades": int(total_asignado),
+                        "pct": pct_global,
+                        "datos": df_solo_tiendas.sum().to_dict()
+                    }
+                if st.session_state.escenario_a:
+                    st.success("✅ Escenario A cargado")
+                    st.metric("Parámetros (A)", st.session_state.escenario_a["nombre"], f"{st.session_state.escenario_a['unidades']} unds ({st.session_state.escenario_a['pct']:.1f}%)")
+
+            with col_b:
+                if st.button("📸 Guardar como Escenario B", use_container_width=True):
+                    st.session_state.escenario_b = {
+                        "nombre": f"WOC: {target_woc} | Límite: {max_send_pct}%",
+                        "unidades": int(total_asignado),
+                        "pct": pct_global,
+                        "datos": df_solo_tiendas.sum().to_dict()
+                    }
+                if st.session_state.escenario_b:
+                    st.success("✅ Escenario B cargado")
+                    st.metric("Parámetros (B)", st.session_state.escenario_b["nombre"], f"{st.session_state.escenario_b['unidades']} unds ({st.session_state.escenario_b['pct']:.1f}%)")
+
+            # Mostrar gráfico comparativo si ambos existen
+            if st.session_state.escenario_a and st.session_state.escenario_b:
+                st.markdown("---")
+                st.subheader("📈 Diferencia de Asignación por Tienda")
+                
+                # Preparar datos para el gráfico agrupado
+                tiendas_a = list(st.session_state.escenario_a["datos"].keys())
+                unidades_a = list(st.session_state.escenario_a["datos"].values())
+                tiendas_b = list(st.session_state.escenario_b["datos"].keys())
+                unidades_b = list(st.session_state.escenario_b["datos"].values())
+                
+                df_comp = pd.DataFrame({
+                    "Tienda": tiendas_a + tiendas_b,
+                    "Unidades": unidades_a + unidades_b,
+                    "Escenario": ["A: " + st.session_state.escenario_a["nombre"]] * len(tiendas_a) + ["B: " + st.session_state.escenario_b["nombre"]] * len(tiendas_b)
+                })
+                
+                fig_comp = px.bar(
+                    df_comp, x="Tienda", y="Unidades", color="Escenario", 
+                    barmode="group", color_discrete_sequence=["#1f77b4", "#ff7f0e"], text_auto=True
+                )
+                fig_comp.update_layout(xaxis_tickangle=-45, margin=dict(t=10, b=10))
+                st.plotly_chart(fig_comp, use_container_width=True)
+                
+                if st.button("🗑️ Limpiar Escenarios"):
+                    st.session_state.escenario_a = None
+                    st.session_state.escenario_b = None
                     st.rerun()
 
-        with cont_graficos:
-            graf_col1, graf_col2 = st.columns(2)
-
-            with graf_col1:
-                st.markdown(txt["chart_title_store"])
-                asignacion_por_tienda = df_solo_tiendas.sum().reset_index()
-                asignacion_por_tienda.columns = ['Tienda', 'Unidades']
-                asignacion_por_tienda = asignacion_por_tienda.sort_values(by='Unidades', ascending=False)
-                
-                fig_store = px.bar(
-                    asignacion_por_tienda, x='Tienda', y='Unidades',
-                    color='Unidades', color_continuous_scale='Blues', text_auto=True
-                )
-                fig_store.update_layout(xaxis_tickangle=-45, showlegend=False, margin=dict(t=10, b=10))
-                st.plotly_chart(fig_store, use_container_width=True)
-
-            with graf_col2:
-                st.markdown(txt["chart_title_size"])
-                df_editado_tallas = df_editado.copy()
-                df_editado_tallas['Total_Asignado'] = df_solo_tiendas.sum(axis=1)
-                df_tallas = df_editado_tallas.groupby('Size')['Total_Asignado'].sum().reset_index()
-                
-                tallas_disponibles = df_tallas['Size'].unique().tolist()
-                tallas_seleccionadas = st.multiselect(txt["size_filter"], tallas_disponibles, default=tallas_disponibles)
-                df_tallas_filt = df_tallas[df_tallas['Size'].isin(tallas_seleccionadas)]
-                
-                # NUEVO SELECTOR DE ORDEN
-                opciones_orden = ["Mayor a Menor", "Menor a Mayor", "Orden Natural (Tallas)"]
-                orden = st.radio("Ordenar barras por:", opciones_orden, horizontal=True, key="orden_tallas_radio")
-                
-                if orden == "Mayor a Menor":
-                    df_tallas_filt = df_tallas_filt.sort_values(by='Total_Asignado', ascending=False)
-                elif orden == "Menor a Mayor":
-                    df_tallas_filt = df_tallas_filt.sort_values(by='Total_Asignado', ascending=True)
-                else:
-                    orden_tallas_retail = ['2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', 'ONE SIZE']
-                    df_tallas_filt['Size'] = pd.Categorical(df_tallas_filt['Size'], categories=orden_tallas_retail, ordered=True)
-                    df_tallas_filt = df_tallas_filt.sort_values('Size')
-                
-                fig_size = px.bar(
-                    df_tallas_filt, x='Size', y='Total_Asignado',
-                    color='Total_Asignado', color_continuous_scale='Teal', text_auto=True
-                )
-                # FORZAR A PLOTLY A OBEDECER TU ORDEN
-                fig_size.update_xaxes(categoryorder='array', categoryarray=df_tallas_filt['Size'].astype(str))
-                fig_size.update_layout(margin=dict(t=10, b=10))
-                st.plotly_chart(fig_size, use_container_width=True)
-
+        # Asegurarnos de que el Excel se genere con los datos correctos
+        df_editado = df_final_matrix
+        
         # 8. Descarga de Excel
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
