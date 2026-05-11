@@ -181,29 +181,36 @@ with st.expander(txt["doc_title"]):
 # --- PANEL LATERAL (CONTROLES) ---
 st.sidebar.header(txt["sidebar_header"])
 
-st.sidebar.subheader(txt["limit_bodega_title"])
-max_send_pct = st.sidebar.slider(txt["limit_bodega_slider"], min_value=10.0, max_value=40.0, value=30.0, step=1.0, on_change=reset_editor)
-flex_margin = st.sidebar.slider(txt["flex_margin"], min_value=0.0, max_value=5.0, value=3.0, step=0.5, on_change=reset_editor)
+# 1. Expandible de Límite de Bodega (Abierto por defecto)
+with st.sidebar.expander(txt["limit_bodega_title"], expanded=True):
+    max_send_pct = st.slider(txt["limit_bodega_slider"], min_value=10.0, max_value=40.0, value=30.0, step=1.0, on_change=reset_editor)
+    flex_margin = st.slider(txt["flex_margin"], min_value=0.0, max_value=5.0, value=3.0, step=0.5, on_change=reset_editor)
 
-st.sidebar.subheader(txt["season_filter_title"])
-st.sidebar.markdown(txt["season_filter_desc"])
-opciones_clima_ui = [txt["season_summer"], txt["season_winter"], txt["season_both"]]
-seleccion_clima_ui = st.sidebar.radio(txt["season_target"], opciones_clima_ui)
+# 2. Expandible de Filtro de Temporada (Cerrado por defecto para ahorrar espacio)
+with st.sidebar.expander(txt["season_filter_title"], expanded=False):
+    st.write(txt["season_filter_desc"])
+    temporada_backend = st.radio(txt["season_target"], [txt["season_summer"], txt["season_winter"], txt["season_both"]], index=2, on_change=reset_editor).lower()
+    
+    # Normalización del clima para el motor
+    if temporada_backend == txt["season_summer"].lower():
+        temporada_backend = "verano"
+    elif temporada_backend == txt["season_winter"].lower():
+        temporada_backend = "invierno"
+    else:
+        temporada_backend = "ambos"
 
-temporada_backend = "verano" if seleccion_clima_ui == txt["season_summer"] else ("invierno" if seleccion_clima_ui == txt["season_winter"] else "ambos")
+# 3. Expandible de Pesos por Categoría (Cerrado por defecto)
+with st.sidebar.expander(txt["weights_title"], expanded=False):
+    w_a = st.number_input(txt["weight_a"], min_value=0.0, value=0.40, step=0.05, on_change=reset_editor)
+    w_b = st.number_input(txt["weight_b"], min_value=0.0, value=0.30, step=0.05, on_change=reset_editor)
+    w_c = st.number_input(txt["weight_c"], min_value=0.0, value=0.20, step=0.05, on_change=reset_editor)
+    w_d = st.number_input(txt["weight_d"], min_value=0.0, value=0.10, step=0.05, on_change=reset_editor)
+    dict_pesos = {'A': w_a, 'B': w_b, 'C': w_c, 'D': w_d}
 
-st.sidebar.subheader(txt["weights_title"])
-peso_a = st.sidebar.number_input(txt["weight_a"], value=40)
-peso_b = st.sidebar.number_input(txt["weight_b"], value=30)
-peso_c = st.sidebar.number_input(txt["weight_c"], value=20)
-peso_d = st.sidebar.number_input(txt["weight_d"], value=10)
-
-total_peso = max(peso_a + peso_b + peso_c + peso_d, 1)
-dict_pesos = {'A': peso_a / total_peso, 'B': peso_b / total_peso, 'C': peso_c / total_peso, 'D': peso_d / total_peso}
-
-# --- NUEVO CONTROL: REPOSICIÓN (PULL) ---
+# 4. Target WOC (Lo dejamos afuera porque es el control principal de Reposición)
+st.sidebar.markdown("---")
 st.sidebar.subheader(txt["target_woc_title"])
-target_woc = st.sidebar.slider(txt["target_woc_slider"], 1, 8, 4, help=txt["tt_woc"], on_change=reset_editor)
+target_woc = st.sidebar.slider(txt["target_woc_slider"], min_value=1, max_value=8, value=4, help=txt["tt_woc"], on_change=reset_editor)
 
 # --- NUEVO CONTROL: ENTRENAMIENTO DE CURVAS ---
 st.sidebar.markdown("---")
@@ -576,9 +583,6 @@ if st.session_state.datos_cargados:
                     st.session_state.escenario_b = None
                     st.rerun()
 
-        # Asegurarnos de que el Excel se genere con los datos correctos
-        df_editado = df_final_matrix
-        
         # 8. Descarga de Excel
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
