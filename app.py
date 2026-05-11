@@ -72,7 +72,6 @@ t = {
         "matrix_title": "📋 Matriz de Asignación Final",
         "download_btn": "📥 Descargar Matriz (Excel)",
         "error_msg": "❌ Ocurrió un error en el cálculo: ",
-        "error_msg": "❌ Ocurrió un error en el cálculo: ",
         "target_woc_title": "4. Objetivo de Inventario",
         "target_woc_slider": "Semanas de Cobertura (Target WOC)",
         "tt_woc": "Define cuántas semanas de venta quieres cubrir en la tienda. Ejemplo: 4 semanas significa que la tienda siempre tendrá stock para vender un mes.",
@@ -102,6 +101,7 @@ t = {
         4. **`Store_Metrics`**: El pulso de las tiendas. Contiene las ventas de las últimas 4 semanas (`Sales_L4W`) y el stock físico en tienda (`Store_SOH`).
         5. **`SOH`**: Reporte vivo del Centro de Distribución. Utiliza las columnas `SKU` y `LSKD_DC` para actualizar las existencias en bodega justo antes de iniciar el cálculo, garantizando que no se asigne mercancía inexistente.
         """,
+    },
     
     "English": {
         "title": "📦 LSKD Weekly Allocation System",
@@ -135,12 +135,10 @@ t = {
         "matrix_title": "📋 Final Allocation Matrix",
         "download_btn": "📥 Download Matrix (Excel)",
         "error_msg": "❌ An error occurred during calculation: ",
-        "error_msg": "❌ An error occurred during calculation: ",
         "target_woc_title": "4. Inventory Target",
         "target_woc_slider": "Target Weeks of Cover (WOC)",
         "tt_woc": "Defines how many weeks of sales you want to cover in-store. Example: 4 weeks means the store will always have stock for one month of sales.",
         "risk_alert": "⚠️ STOCKOUT RISK",
-        
         "doc_title": "📚 Documentation, Methodology & Inputs",
         "doc_content": """
         ### 📌 App Summary
@@ -166,7 +164,6 @@ t = {
         4. **`Store_Metrics`**: The pulse of the stores. Contains the sales of the last 4 weeks (`Sales_L4W`) and physical stock in store (`Store_SOH`).
         5. **`SOH`**: Live report from the Distribution Center. Uses the `SKU` and `LSKD_DC` columns to update warehouse stock right before calculating, ensuring non-existent merchandise is never allocated.
         """
-
     }
 }
 
